@@ -1,0 +1,22 @@
+# Press log rotation configuration
+# All Press logs are considered access logs: 24 hours retention (1 day)
+
+/var/log/presshost/cron.log {
+    daily
+    rotate 1
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 644 www-data www-data
+}
+
+/var/log/presshost/wp-cli.log {
+    daily
+    rotate 1
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 644 www-data www-data
+}

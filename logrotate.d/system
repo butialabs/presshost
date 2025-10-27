@@ -1,0 +1,12 @@
+# System log rotation configuration
+# System logs are considered error logs: 7 days retention
+
+/var/log/system/cron.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 644 root root
+}
