@@ -48,7 +48,7 @@ server {
 		fastcgi_pass   $upstream;
 	}
 
-	# Caches images, icons, video, audio, HTC, etc. (excluding /i/ path for thumbor)
+	# Caches images, icons, video, audio, etc.
     location ~* ^.+\.(ogg|ogv|svg|svgz|eot|otf|woff|mp4|ttf|rss|atom|jpg|jpeg|gif|png|ico|zip|tgz|gz|rar|bz2|doc|xls|exe|ppt|tar|mid|midi|wav|bmp|rtf)$ {
         access_log off;
 		log_not_found off;
