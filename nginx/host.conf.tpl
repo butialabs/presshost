@@ -41,55 +41,8 @@ server {
 		try_files $uri $uri/ /index.php?$args;
 	}
 
-	# Redis
-    location /redis-fetch {
-        internal;
-        set $redis_key $args;
-        redis_pass redis:6379;
-    }
-    location /redis-store {
-        internal;
-        set_unescape_uri $key $arg_key;
-        redis2_query set $key $echo_request_body;
-        redis2_query expire $key 14400;
-        redis2_pass redis:6379;
-        redis2_connect_timeout 1s;
-        redis2_send_timeout 1s;
-        redis2_read_timeout 1s;
-    }
-
 	location ~ \.php$ {
-		# Improved cache key structure for better organization
-		set $cache_key "PRESSHOST:$scheme$request_method$host$request_uri";
-
 		try_files $uri =404;
-
-        # Skip cache conditions
-        srcache_fetch_skip $skip_cache;
-        srcache_store_skip $skip_cache;
-        
-        # Disable automatic cache control headers
-        srcache_response_cache_control off;
-        
-        # Store original request for cache operations
-        set_escape_uri $escaped_key $cache_key;
-
-        # Configure Redis caching
-        srcache_fetch GET /redis-fetch $cache_key;
-        srcache_store PUT /redis-store key=$escaped_key;
-        
-        # Cache TTL settings
-        srcache_default_expire 14400; # 4 hours
-        srcache_max_expire 86400;     # 24 hours max
-
-        # Add cache status headers for debugging
-        more_set_headers 'X-Cache-Status $srcache_fetch_status';
-        more_set_headers 'X-Cache-Store $srcache_store_status';
-        more_set_headers 'X-Cache-Key $cache_key';
-        
-        # Add cache control headers
-        add_header Cache-Control "public, max-age=3600" always;
-        add_header Vary "Accept-Encoding, Cookie" always;
 
 		include global/fastcgi-params.conf;
 		fastcgi_pass   $upstream;

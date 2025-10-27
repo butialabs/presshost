@@ -64,8 +64,7 @@ RUN apt-get install -y \
     php${PHP_VERSION}-readline \
     php${PHP_VERSION}-enchant \
     php${PHP_VERSION}-ssh2 \
-    php${PHP_VERSION}-apcu \
-    php${PHP_VERSION}-redis
+    php${PHP_VERSION}-apcu
 
 # Install Certbot with NGINX support
 RUN apt-get install -y \
