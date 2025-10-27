@@ -20,58 +20,6 @@ RENEWAL_DAYS=1
 # Source common utilities
 source "${SCRIPT_DIR}/common-utils.sh"
 
-# Function to update .env file with current environment variables
-update_env_file() {
-    info "Updating /site/press/.env with allowed environment variables..."
-    
-    # Create or clear the .env file
-    if safe_execute "> /site/press/.env" "Creating/clearing .env file"; then
-        debug ".env file created/cleared successfully"
-    else
-        error "Failed to create/clear .env file"
-        return 1
-    fi
-    
-    local var_count=0
-    
-    # Export allowed environment variables to .env file with proper quoting
-    while IFS='=' read -r -d '' key value; do
-        # Only include variables that match allowed patterns or specific names
-        case "$key" in
-            WP_*|DB_*|AUTOMATIC_*|DISABLE_*|DISALLOW_*|FORCE_SSL_*|SMTP_*|TURNSTILE_*|YEAP_*|IA_*|THUMBOR_*|CLOUDFLARE_*) ;;
-            AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY|AUTH_SALT|SECURE_AUTH_SALT|LOGGED_IN_SALT|NONCE_SALT|WPLANG|FS_METHOD|AUTOSAVE_INTERVAL|MEDIA_TRASH|DISABLE_NAG_NOTICES|GOOGLE_API_KEY|ALO|ACF_PRO_KEY|ACFE_PRO_KEY|PERMALINK_MANAGER_PRO|YOUTUBE_API_KEY|SAVEQUERIES) ;;
-            *) continue ;;
-        esac
-        
-        # Write the key=value pair exactly as received (preserve original quoting)
-        printf '%s=%s\n' "$key" "$value" >> /site/press/.env
-        var_count=$((var_count + 1))
-        debug "Added environment variable: $key"
-    done < <(env -0)
-    
-    # Sort the .env file for consistency
-    if safe_execute "sort -o /site/press/.env /site/press/.env" "Sorting .env file"; then
-        debug ".env file sorted successfully"
-    else
-        warning "Failed to sort .env file, continuing anyway"
-    fi
-    
-    # Set proper ownership and permissions
-    if safe_execute "chown www-data:www-data /site/press/.env" "Setting .env file ownership"; then
-        debug ".env file ownership set successfully"
-    else
-        warning "Failed to set .env file ownership"
-    fi
-    
-    if safe_execute "chmod 644 /site/press/.env" "Setting .env file permissions"; then
-        debug ".env file permissions set successfully"
-    else
-        warning "Failed to set .env file permissions"
-    fi
-    
-    success "Successfully wrote $var_count allowed environment variables to /site/press/.env"
-}
-
 logs() {
     info "Checking and creating log directories..."
     
@@ -456,13 +404,6 @@ main() {
         exit 1
     fi
     
-    # Update environment variables
-    if update_env_file; then
-        success "Environment setup completed successfully"
-    else
-        error "Environment setup failed"
-        exit 1
-    fi
 
     # Check required environment variables
     require_env_vars SSL_DOMAIN
