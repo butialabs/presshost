@@ -37,6 +37,9 @@ server {
 	# Cloudflare
 	include global/cloudflare.conf;
 
+	# Cache plugin support
+	include global/cache.conf;
+
 	location / {
 		try_files $uri $uri/ /index.php?$args;
 	}

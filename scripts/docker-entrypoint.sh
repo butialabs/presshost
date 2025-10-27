@@ -73,6 +73,115 @@ logs() {
     success "Log directories check completed"
 }
 
+# Function to initialize cache directories and create symlink
+initialize_cache() {
+    info "Initializing cache directories..."
+    
+    local cache_dir="/site/cache"
+    local wp_cache_dir="/site/press/wp-content/cache"
+    
+    # Ensure cache directory exists with proper permissions
+    if [[ ! -d "$cache_dir" ]]; then
+        if safe_execute "mkdir -p '$cache_dir'" "Creating cache directory"; then
+            success "Cache directory created at $cache_dir"
+        else
+            error "Failed to create cache directory"
+            return 1
+        fi
+    fi
+    
+    # Create cache subdirectories
+    local cache_subdirs=(
+        "$cache_dir/page"
+        "$cache_dir/minify"
+        "$cache_dir/object"
+        "$cache_dir/db"
+        "$cache_dir/tmp"
+    )
+    
+    for subdir in "${cache_subdirs[@]}"; do
+        if [[ ! -d "$subdir" ]]; then
+            if safe_execute "mkdir -p '$subdir'" "Creating $subdir"; then
+                debug "Created cache subdirectory: $subdir"
+            else
+                warning "Failed to create $subdir"
+            fi
+        fi
+    done
+    
+    # Set proper permissions
+    if safe_execute "chown -R www-data:www-data '$cache_dir'" "Setting cache ownership"; then
+        debug "Cache ownership set to www-data:www-data"
+    else
+        warning "Failed to set cache ownership"
+    fi
+    
+    if safe_execute "chmod -R 755 '$cache_dir'" "Setting cache permissions"; then
+        debug "Cache permissions set to 755"
+    else
+        warning "Failed to set cache permissions"
+    fi
+    
+    # Set special permissions for tmp directory
+    if safe_execute "chmod 775 '$cache_dir/tmp'" "Setting tmp directory permissions"; then
+        debug "Tmp directory permissions set to 775"
+    else
+        warning "Failed to set tmp permissions"
+    fi
+    
+    # Check if WordPress directory exists
+    if [[ ! -d "/site/press/wp-content" ]]; then
+        info "WordPress not yet installed, skipping cache symlink"
+        return 0
+    fi
+    
+    # Handle existing cache directory or symlink
+    if [[ -L "$wp_cache_dir" ]]; then
+        # It's already a symlink
+        local current_target=$(readlink "$wp_cache_dir")
+        if [[ "$current_target" == "$cache_dir" ]]; then
+            info "Cache symlink already correctly configured"
+            return 0
+        else
+            warning "Cache symlink points to wrong location: $current_target"
+            if safe_execute "rm '$wp_cache_dir'" "Removing incorrect symlink"; then
+                debug "Incorrect symlink removed"
+            else
+                error "Failed to remove incorrect symlink"
+                return 1
+            fi
+        fi
+    elif [[ -d "$wp_cache_dir" ]]; then
+        # It's a directory - back it up and remove
+        warning "Found existing cache directory at $wp_cache_dir"
+        local backup_dir="/site/press/wp-content/cache.backup.$(date +%Y%m%d_%H%M%S)"
+        if safe_execute "mv '$wp_cache_dir' '$backup_dir'" "Backing up existing cache"; then
+            success "Existing cache backed up to $backup_dir"
+        else
+            error "Failed to backup existing cache directory"
+            return 1
+        fi
+    fi
+    
+    # Create symlink
+    if safe_execute "ln -sf '$cache_dir' '$wp_cache_dir'" "Creating cache symlink"; then
+        success "Cache symlink created: $wp_cache_dir -> $cache_dir"
+    else
+        error "Failed to create cache symlink"
+        return 1
+    fi
+    
+    # Verify symlink
+    if [[ -L "$wp_cache_dir" ]]; then
+        local link_target=$(readlink "$wp_cache_dir")
+        info "Cache symlink verified: $wp_cache_dir -> $link_target"
+    else
+        warning "Cache symlink verification failed"
+    fi
+    
+    success "Cache initialization completed"
+}
+
 # Function to generate DH parameters for SSL
 generate_dhparam() {
     local dhparam_file="/etc/ssl/certs/dhparam.pem"
@@ -409,6 +518,13 @@ main() {
     require_env_vars SSL_DOMAIN
 
     logs
+
+    # Initialize cache directories and symlink
+    if initialize_cache; then
+        success "Cache setup completed successfully"
+    else
+        warning "Cache setup completed with warnings"
+    fi
 
     check_domain
     

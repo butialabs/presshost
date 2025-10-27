@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/altendorfme/presshost:latest
+    image: ghcr.io/butialabs/presshost:latest
     container_name: app
     restart: unless-stopped
     ports:
@@ -13,6 +13,8 @@ services:
       # WordPress/ClassicPress files
       - /opt/press:/site/press
       - /opt/uploads:/site/uploads
+      # Cache directory for disk-based cache plugins
+      - /opt/cache:/site/cache
       # SSL certificates
       - /opt/certbot/etc:/etc/letsencrypt:ro
       - /opt/certbot/webroot:/var/www/certbot:ro
@@ -64,10 +66,6 @@ services:
     volumes:
       - /opt/mariadb/data:/var/lib/mysql
       - /opt/logs/mariadb:/var/log/mariadb
-    configs:
-      - source: mariadb_config
-        target: /etc/mysql/my.cnf
-    command: --defaults-file=/etc/mysql/my.cnf
     networks:
       - presshost
     logging:
@@ -79,88 +77,3 @@ services:
 networks:
   presshost:
     name: presshost
-
-configs:
-  mariadb_config:
-    content: |
-      [mysqld]
-      # Basic Settings
-      bind-address = 0.0.0.0
-      skip-name-resolve
-      default-storage-engine = InnoDB
-      character-set-server = utf8mb4
-      collation-server = utf8mb4_unicode_ci
-
-      # Memory Settings (optimized for 4GB RAM)
-      innodb_buffer_pool_size = 2G
-      innodb_buffer_pool_instances = 7
-      innodb_log_buffer_size = 32M
-      innodb_sort_buffer_size = 1M
-
-      # Connection Settings
-      max_connections = 200
-      max_connect_errors = 1000000
-      thread_cache_size = 150
-      table_open_cache = 3000
-      table_definition_cache = 1500
-
-      # Query Cache (disabled for better performance in modern MariaDB)
-      query_cache_type = 0
-      query_cache_size = 0
-
-      # Temporary Tables
-      tmp_table_size = 128M
-      max_heap_table_size = 128M
-
-      # InnoDB Performance Settings
-      innodb_log_file_size = 256M
-      innodb_log_files_in_group = 2
-      innodb_flush_log_at_trx_commit = 2
-      innodb_flush_method = O_DIRECT
-      innodb_file_per_table = 1
-      innodb_open_files = 300
-
-      # InnoDB I/O Settings (optimized for SSD)
-      innodb_io_capacity = 800
-      innodb_io_capacity_max = 1600
-      innodb_read_io_threads = 6
-      innodb_write_io_threads = 6
-      innodb_thread_concurrency = 12
-      innodb_purge_threads = 3
-
-      # MyISAM Settings
-      key_buffer_size = 64M
-      myisam_sort_buffer_size = 64M
-
-      # Sorting and Grouping
-      sort_buffer_size = 1M
-      read_buffer_size = 512K
-      read_rnd_buffer_size = 1M
-      join_buffer_size = 1M
-
-      # Network and Packet Settings
-      max_allowed_packet = 128M
-      interactive_timeout = 300
-      wait_timeout = 300
-      net_read_timeout = 60
-      net_write_timeout = 60
-
-      # Logging (adjust as needed)
-      slow_query_log = 1
-      slow_query_log_file = /var/log/mysql/slow.log
-      long_query_time = 2
-      log_queries_not_using_indexes = 0
-
-      # Performance Schema (optional, can be disabled to save memory)
-      performance_schema = ON
-      performance_schema_max_table_instances = 300
-      performance_schema_max_table_handles = 3000
-
-      [client]
-      default-character-set = utf8mb4
-
-      [mysqldump]
-      quick
-      quote-names
-      max_allowed_packet = 64M
-

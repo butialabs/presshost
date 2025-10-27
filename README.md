@@ -16,13 +16,14 @@
 - ⚙️ **Environment-based Config** - No wp-config.php editing needed
 - 🔧 **WP-CLI Included** - Full WordPress management from command line
 - 📦 **Dual CMS Support** - Works with both WordPress and ClassicPress
+- 💾 **Disk Cache Support** - Optimized for WP Super Cache, W3 Total Cache, and WP Fastest Cache
 
 ## 🎬 Quick Start
 
 ### 1. Create Directory Structure
 
 ```bash
-mkdir -p /opt/{app,uploads,ssl/{letsencrypt,certbot,certs},logs}
+mkdir -p /opt/{press,uploads,cache,ssl/{letsencrypt,certbot,certs},logs}
 ```
 
 ### 2. Setup Environment
@@ -46,6 +47,7 @@ services:
     volumes:
       - /opt/press:/site/press
       - /opt/uploads:/site/uploads
+      - /opt/cache:/site/cache
       - /opt/ssl/letsencrypt:/etc/letsencrypt
       - /opt/logs:/var/log
 ```
@@ -86,8 +88,9 @@ That's it! Your site is now live at `https://yourdomain.com` 🎉
 
 ```
 /opt/
-├── app/           → WordPress/ClassicPress files (/site/press)
+├── press/         → WordPress/ClassicPress files (/site/press)
 ├── uploads/       → Media uploads (/site/uploads) - MUST be separate
+├── cache/         → Plugin cache files (/site/cache)
 ├── ssl/
 │   ├── letsencrypt/  → SSL certificates
 │   ├── certbot/      → Certbot webroot
@@ -98,7 +101,27 @@ That's it! Your site is now live at `https://yourdomain.com` 🎉
 ⚠️ **Critical Notes:**
 - `wp-config.php` is provided by the image - configure via environment variables
 - Uploads **must** be in `/site/uploads` (not `/site/press/wp-content/uploads`)
+- Cache directory is automatically symlinked to `/site/press/wp-content/cache`
 - Never edit `wp-config.php` directly - use `.env` file instead
+
+### Cache Directory
+
+The cache directory is separated from WordPress files for better performance and easier management:
+
+```
+/opt/cache/        → Plugin cache files (/site/cache)
+  ├── page/        → Page cache
+  ├── minify/      → Minified CSS/JS
+  ├── object/      → Object cache (if disk-based)
+  ├── db/          → Database query cache
+  └── tmp/         → Temporary files
+```
+
+**Benefits:**
+- 🚀 Cache isolated from code for better backup strategies
+- 📊 Easy monitoring of cache size
+- 🗑️ Simple cache purging without affecting WordPress files
+- ⚡ Optimized NGINX serving of cached files
 
 ### Environment Variables
 
@@ -125,7 +148,7 @@ Perfect for starting a fresh Press site:
 
 ```bash
 # Create volumes
-mkdir -p /opt/{app,uploads,ssl/{letsencrypt,certbot,certs},logs}
+mkdir -p /opt/{press,uploads,cache,ssl/{letsencrypt,certbot,certs},logs}
 
 # Configure environment
 cp docs/.env.sample .env
@@ -199,9 +222,22 @@ services:
     env_file: .env
     volumes:
       - /opt/uploads:/site/uploads
+      - /opt/cache:/site/cache
       - /opt/ssl/letsencrypt:/etc/letsencrypt
       - /opt/logs:/var/log
 ```
+
+## 💾 Cache Plugin Configuration
+
+PressHost includes optimized support for disk-based cache plugins:
+
+### Supported Plugins
+
+✅ **WP Super Cache** - Simple, reliable page caching
+✅ **W3 Total Cache** - Advanced caching with minification
+✅ **WP Fastest Cache** - Fast and easy cache solution
+✅ **Cache Enabler** - Lightweight disk cache
+✅ **Comet Cache** - Advanced caching features
 
 ## 🔧 Common Tasks
 
@@ -269,6 +305,7 @@ docker exec -it app certbot renew --force-renewal
 - **OPcache** - Bytecode caching enabled
 - **APCu** - Object caching support
 - **Redis Ready** - Compatible with Redis object cache
+- **Disk Cache Support** - Optimized for popular cache plugins
 - **FastCGI Cache** - NGINX caching configured
 - **HTTP/3** - Next-generation protocol support
 
@@ -283,8 +320,8 @@ docker exec -it app certbot renew --force-renewal
 ### Permission Issues
 
 ```bash
-docker exec -it app chown -R www-data:www-data /site/press /site/uploads
-docker exec -it app chmod -R 755 /site/press /site/uploads
+docker exec -it app chown -R www-data:www-data /site/press /site/uploads /site/cache
+docker exec -it app chmod -R 755 /site/press /site/uploads /site/cache
 ```
 
 ### Database Connection Error
@@ -297,6 +334,8 @@ docker exec -it app chmod -R 755 /site/press /site/uploads
 
 - [Environment Variables](docs/.env.sample) - Complete configuration reference
 - [Docker Compose Example](docs/compose.yml) - Full docker-compose setup
+- [Cache Architecture](docs/CACHE_ARCHITECTURE.md) - Technical cache implementation details
+- [Cache Plugins Guide](docs/CACHE_PLUGINS_GUIDE.md) - Step-by-step plugin configuration
 
 ## 🌟 Like it? Help Out!
 

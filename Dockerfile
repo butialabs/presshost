@@ -87,6 +87,12 @@ RUN curl -L https://github.com/wp-cli/wp-cli/releases/download/v${WP_CLI_VERSION
 RUN mkdir -p \
     /site/press \
     /site/uploads \
+    /site/cache \
+    /site/cache/page \
+    /site/cache/minify \
+    /site/cache/object \
+    /site/cache/db \
+    /site/cache/tmp \
     /etc/nginx/ssl \
     /etc/ssl/certs \
     /var/www/certbot \
@@ -102,9 +108,16 @@ RUN mkdir -p \
 RUN chown -R www-data:www-data /var/run/php \
     && chown -R www-data:www-data /var/log/nginx /var/log/php /var/log/presshost \
     && chown -R www-data:www-data /site/uploads \
+    && chown -R www-data:www-data /site/cache \
     && chown -R root:root /var/log/supervisor /var/log/system \
     && chmod 755 /site \
     && chmod 755 /site/uploads \
+    && chmod 755 /site/cache \
+    && chmod 755 /site/cache/page \
+    && chmod 755 /site/cache/minify \
+    && chmod 755 /site/cache/object \
+    && chmod 755 /site/cache/db \
+    && chmod 775 /site/cache/tmp \
     && chmod 750 /var/run/php \
     && chmod 755 /var/log/nginx /var/log/php /var/log/presshost /var/log/supervisor /var/log/system
 
@@ -147,8 +160,8 @@ RUN mkdir -p /var/run/php \
 EXPOSE 80 443 443/udp
 
 # Define volumes
-# IMPORTANTE: /site/press e /site/uploads devem ser montados separadamente
-VOLUME ["/site/press", "/site/uploads", "/var/www/certbot", "/etc/letsencrypt", "/etc/ssl/certs", "/var/log"]
+# IMPORTANTE: /site/press, /site/uploads e /site/cache devem ser montados separadamente
+VOLUME ["/site/press", "/site/uploads", "/site/cache", "/var/www/certbot", "/etc/letsencrypt", "/etc/ssl/certs", "/var/log"]
 
 WORKDIR /site
 
