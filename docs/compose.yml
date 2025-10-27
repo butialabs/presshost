@@ -27,6 +27,32 @@ services:
         max-size: 10m
         max-file: "3"
         
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - 6379:6379
+    volumes:
+      - /opt/redis/data:/data
+      - /opt/logs/redis:/var/log/redis
+    command: >
+      sh -c "redis-server
+      --requirepass $${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru"
+    networks:
+      - presshost
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+        
   mariadb:
     image: mariadb:11
     container_name: mariadb
