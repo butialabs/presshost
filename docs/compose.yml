@@ -14,9 +14,9 @@ services:
       - /opt/press:/site/press
       - /opt/uploads:/site/uploads
       # SSL certificates
-      - /opt/ssl/letsencrypt:/etc/letsencrypt
-      - /opt/ssl/certbot:/var/www/certbot
-      - /opt/ssl/certs:/etc/ssl/certs
+      - /opt/certbot/etc:/etc/letsencrypt:ro
+      - /opt/certbot/webroot:/var/www/certbot:ro
+      - /opt/certbot/certs:/etc/ssl/certs:ro
       # Logs
       - /opt/logs:/var/log
     networks:
@@ -26,6 +26,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+        
   mariadb:
     image: mariadb:11
     container_name: mariadb
@@ -48,6 +49,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
 networks:
   presshost:
     name: presshost

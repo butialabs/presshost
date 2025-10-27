@@ -35,10 +35,6 @@ if (!function_exists('getenv_docker')) {
 	}
 }
 
-require_once ABSPATH . '/vendor/autoload.php';
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-
 // Define WP_CLI before using it
 defined('WP_CLI') || define('WP_CLI', defined('WP_CLI') && WP_CLI);
 if (WP_CLI) {
