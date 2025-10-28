@@ -38,7 +38,7 @@ nano .env  # Configure your settings
 ```yaml
 services:
   app:
-    image: ghcr.io/altendorfme/presshost:latest
+    image: ghcr.io/butialabs/presshost:latest
     ports:
       - "80:80"
       - "443:443/tcp"
@@ -199,7 +199,7 @@ Create your own image with WordPress or ClassicPress pre-installed:
 #### 1. Create a Dockerfile
 
 ```dockerfile
-FROM ghcr.io/altendorfme/presshost:latest
+FROM ghcr.io/butialabs/presshost:latest
 COPY --chown=www-data:www-data ./press /site/press
 ```
 
@@ -233,11 +233,11 @@ PressHost includes optimized support for disk-based cache plugins:
 
 ### Supported Plugins
 
-✅ **WP Super Cache** - Simple, reliable page caching
-✅ **W3 Total Cache** - Advanced caching with minification
-✅ **WP Fastest Cache** - Fast and easy cache solution
-✅ **Cache Enabler** - Lightweight disk cache
-✅ **Comet Cache** - Advanced caching features
+- ✅ **WP Super Cache** - Simple, reliable page caching
+- ✅ **W3 Total Cache** - Advanced caching with minification
+- ✅ **WP Fastest Cache** - Fast and easy cache solution
+- ✅ **Cache Enabler** - Lightweight disk cache
+- ✅ **Comet Cache** - Advanced caching features
 
 ## 🔧 Common Tasks
 
