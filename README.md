@@ -13,10 +13,9 @@
 - 🔒 **Flexible SSL** - Multiple deployment options (Cloudflare, NPM, Traefik)
 - 🔐 **Rootless by Default** - Runs as non-root user for security
 - ⚡ **Dynamic Configuration** - PHP settings via environment variables (no rebuild needed)
-- 🐳 **Docker Native** - Easy deployment with volume management  
-- ⚙️ **Environment-based Config** - No wp-config.php editing needed
-- 🔧 **WP-CLI Included** - Full WordPress management from command line
-- 📦 **Dual CMS Support** - Works with both WordPress and ClassicPress
+- ⚙️ **Environment-based** - No wp-config.php editing needed
+- 🔧 **WP-CLI** - Full WordPress management from command line
+- 📦 **CMS Support** - Works with both WordPress and ClassicPress
 - 💾 **Cache Support** - Optimized for WP Super Cache, W3 Total Cache, WP Fastest Cache
 
 ## 🎬 Quick Start
@@ -46,15 +45,6 @@ INSTALL_PRESS=wordpress
 INSTALL_PRESS=classicpress
 ```
 
-Add this to your `docker-compose.yml`:
-
-```yaml
-services:
-  app:
-    environment:
-      - INSTALL_PRESS=wordpress  # or classicpress
-```
-
 Or pass it directly when running the container:
 
 ```bash
@@ -66,6 +56,24 @@ docker exec -it presshost install-classicpress
 **That's it!** Your site is live at `http://yourdomain.com:8080` or `http://yourdomain.com:8443`
 
 **Note:** Automatic installation only runs if no existing WordPress/ClassicPress installation is detected (checks for [`wp-load.php`](hooks/00-init.sh:162)). This prevents accidental overwrites of existing installations.
+
+## 🌐 CDN
+
+PressHost supports automatic CDN configuration through the `USE_CDN` environment variable. Currently, Cloudflare is supported.
+
+### Cloudflare
+
+When behind Cloudflare, configure automatic IP restoration:
+
+```bash
+USE_CDN=cloudflare
+```
+
+**What it does:**
+- Automatically fetches and configures Cloudflare's IP ranges
+- Sets up NGINX to trust Cloudflare's `CF-Connecting-IP` header
+- Restores real client IPs for accurate logging and security
+- Updates IP ranges on every container restart
 
 ### Directory Structure
 
