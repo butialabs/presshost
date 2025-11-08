@@ -1,0 +1,8 @@
+# WordPress Cron Events - Run every minute
+* * * * * /usr/local/bin/wp --path="/site/press" --quiet --allow-root cron event run --due-now
+
+# Cleanup temporary cache files - Daily at 3:00 AM
+0 3 * * * find /site/cache/tmp -type f -mtime +7 -delete 2>/dev/null || true
+
+# Database optimization - Weekly on Sunday at 4:00 AM
+0 4 * * 0 /usr/local/bin/wp --path="/site/press" --quiet --allow-root db optimize 2>/dev/null || true

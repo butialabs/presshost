@@ -1,8 +1,0 @@
-# Press Cron Events - Run every minute as www-data with timeout and better error handling
-* * * * * /usr/local/bin/wp --path="/site/press" --quiet --allow-root cron event run --due-now >> /var/log/press/cron.log 2>&1
-
-# Let's Encrypt Certificate Renewal - Daily at 6:43 AM with better error handling
-43 6 * * * /usr/bin/certbot renew --quiet --post-hook "nginx -s reload" >> /var/log/system/cron.log 2>&1
-
-# Logrotate - Run daily at 6:25 AM (before certbot renewal) as root
-25 6 * * * /usr/sbin/logrotate /etc/logrotate.conf >> /var/log/system/cron.log 2>&1

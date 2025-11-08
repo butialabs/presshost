@@ -1,170 +1,228 @@
-# PressHost Docker Container with NGINX, PHP 8.4, and SSL
-FROM debian:bookworm-slim
+# PressHost Docker Container
+# Based on shinsenter/php:8.4-fpm-nginx for optimized and flexible WordPress/ClassicPress hosting
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PHP_VERSION=8.4
-ENV NGINX_VERSION=1.28.0-6ppa~stable
-ENV WP_CLI_VERSION=2.12.0
+FROM shinsenter/php:8.4-fpm-nginx
 
-# Install system dependencies and repositories
+# Metadata
+LABEL maintainer="Butiá Labs <contato@butialabs.com>"
+LABEL description="PressHost - Production-ready WordPress/ClassicPress hosting with NGINX, PHP 8.4"
+LABEL version="1.0"
+LABEL org.opencontainers.image.source="https://github.com/butialabs/presshost"
+
+# ==========================================
+# DIRECTORY STRUCTURE
+# ==========================================
+ENV APP_PATH=/site/press
+ENV DOCUMENT_ROOT=/site/press
+ENV APP_USER=www-data
+ENV APP_GROUP=www-data
+
+# ==========================================
+# PHP CONFIGURATION
+# ==========================================
+# Enable runtime PHP configuration
+ENV ALLOW_RUNTIME_PHP_ENVVARS=1
+
+# Performance settings
+ENV PHP_MAX_EXECUTION_TIME=600
+ENV PHP_MAX_INPUT_TIME=400
+ENV PHP_MEMORY_LIMIT=512M
+ENV PHP_POST_MAX_SIZE=64M
+ENV PHP_UPLOAD_MAX_FILESIZE=64M
+ENV PHP_MAX_FILE_UPLOADS=20
+ENV PHP_MAX_INPUT_VARS=3000
+
+# Error handling
+ENV PHP_DISPLAY_ERRORS=Off
+ENV PHP_LOG_ERRORS=On
+ENV PHP_ERROR_REPORTING="E_ALL & ~E_DEPRECATED & ~E_STRICT"
+
+# Security
+ENV PHP_EXPOSE_PHP=Off
+ENV PHP_ALLOW_URL_FOPEN=On
+ENV PHP_ALLOW_URL_INCLUDE=Off
+
+# OPcache configuration
+ENV PHP_OPCACHE_ENABLE=1
+ENV PHP_OPCACHE_ENABLE_CLI=0
+ENV PHP_OPCACHE_MEMORY_CONSUMPTION=512
+ENV PHP_OPCACHE_MAX_ACCELERATED_FILES=50000
+ENV PHP_OPCACHE_REVALIDATE_FREQ=0
+ENV PHP_OPCACHE_CONSISTENCY_CHECKS=1
+
+# APCu configuration
+ENV PHP_APC_ENABLED=1
+ENV PHP_APC_SHM_SIZE=1024M
+ENV PHP_APC_MAX_FILE_SIZE=10M
+
+# Session configuration
+ENV PHP_SESSION_SAVE_HANDLER=files
+ENV PHP_SESSION_SAVE_PATH=/tmp
+
+# Date/Timezone
+ENV TZ=UTC
+
+# Output buffering
+ENV PHP_OUTPUT_BUFFERING=4096
+ENV PHP_IMPLICIT_FLUSH=Off
+
+# Zlib compression
+ENV PHP_ZLIB_OUTPUT_COMPRESSION=On
+ENV PHP_ZLIB_OUTPUT_COMPRESSION_LEVEL=6
+
+# MySQL/MySQLi
+ENV PHP_MYSQLI_DEFAULT_SOCKET=/var/run/mysqld/mysqld.sock
+ENV PHP_MYSQLI_RECONNECT=On
+ENV PHP_MYSQLI_CACHE_SIZE=2000
+
+# Realpath cache
+ENV PHP_REALPATH_CACHE_SIZE=16K
+ENV PHP_REALPATH_CACHE_TTL=600
+
+# PCRE settings
+ENV PHP_PCRE_BACKTRACK_LIMIT=1000000
+ENV PHP_PCRE_RECURSION_LIMIT=100000
+ENV PHP_PCRE_JIT=1
+
+# ==========================================
+# CRON
+# ==========================================
+ENV ENABLE_CRONTAB=1
+ENV CRONTAB_HOME=/site/press
+
+# ==========================================
+# INSTALLATION
+# ==========================================
+USER root
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    # Basic system utilities
+    # Essential tools
     curl \
-    gnupg2 \
-    lsb-release \
     ca-certificates \
-    apt-transport-https \
-    software-properties-common \
-    supervisor \
-    gzip \
-    less \
+    gnupg2 \
+    # WordPress utilities
     default-mysql-client \
     unzip \
-    openssl \
-    cron \
     nano \
-    logrotate \
-    jq
+    less \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
 
-# Add PHP repository
-RUN curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/php-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/php-archive-keyring.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list
+# Install required PHP extensions using phpaddmod
+RUN phpaddmod \
+    bcmath \
+    gd \
+    imagick \
+    intl \
+    mysqli \
+    opcache \
+    zip \
+    apcu \
+    redis \
+    soap \
+    imap \
+    xmlrpc
 
-# Add WordOps repository for nginx-wo from OpenSUSE Build Service
-# Using trusted=yes to bypass expired GPG key verification
-RUN echo "deb [trusted=yes] https://download.opensuse.org/repositories/home:virtubox:WordOps/Debian_12/ /" > /etc/apt/sources.list.d/wordops-nginx-wo.list
+# Install WP-CLI using shinsenter's best practices
+ARG WPCLI_URL=https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+ARG WPCLI_PATH=/usr/local/bin/wp-cli
 
-RUN apt-get update
+RUN <<'EOF'
+echo 'Installing WP-CLI...'
+[ -z "$DEBUG" ] || set -ex && set -e
 
-# Install WordOps custom NGINX
-RUN apt-get install -y \
-    nginx-custom=${NGINX_VERSION} \
-    nginx-wo=${NGINX_VERSION}
+# Set WP-CLI environment defaults
+env-default "alias wp-cli='$WPCLI_PATH --allow-root'"
+env-default INITIAL_PROJECT     'manual'
+env-default WP_CLI_DIR          '/.wp-cli'
+env-default WP_CLI_CACHE_DIR    '$WP_CLI_DIR/cache/'
+env-default WP_CLI_PACKAGES_DIR '$WP_CLI_DIR/packages/'
+env-default WP_CLI_CONFIG_PATH  '$WP_CLI_DIR/config.yml'
+env-default WP_DEBUG            '$(is-debug && echo 1 || echo 0)'
+env-default WP_DEBUG_LOG        '$(log-path stdout)'
+env-default WORDPRESS_DEBUG     '$(is-debug && echo 1 || echo 0)'
 
-# Install PHP 8.4 with PressHost recommended packages
-RUN apt-get install -y \
-    php${PHP_VERSION}-fpm \
-    php${PHP_VERSION}-cli \
-    php${PHP_VERSION}-common \
-    php${PHP_VERSION}-mysql \
-    php${PHP_VERSION}-xml \
-    php${PHP_VERSION}-xmlrpc \
-    php${PHP_VERSION}-curl \
-    php${PHP_VERSION}-gd \
-    php${PHP_VERSION}-imagick \
-    php${PHP_VERSION}-dev \
-    php${PHP_VERSION}-imap \
-    php${PHP_VERSION}-mbstring \
-    php${PHP_VERSION}-opcache \
-    php${PHP_VERSION}-soap \
-    php${PHP_VERSION}-zip \
-    php${PHP_VERSION}-intl \
-    php${PHP_VERSION}-bcmath \
-    php${PHP_VERSION}-readline \
-    php${PHP_VERSION}-enchant \
-    php${PHP_VERSION}-ssh2 \
-    php${PHP_VERSION}-apcu
+# Download and install WP-CLI
+php -r "copy('$WPCLI_URL', '$WPCLI_PATH');" && chmod +xr "$WPCLI_PATH"
+$WPCLI_PATH --allow-root --version
 
-# Install Certbot with NGINX support
-RUN apt-get install -y \
-    certbot \
-    python3-certbot-nginx
+# Create wp command alias
+web-cmd wp "$WPCLI_PATH --allow-root"
+EOF
 
-# Update ca-certificates and ensure proper SSL setup
-RUN apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /tmp/* \
-    && rm -rf /var/tmp/* \
-    && rm -rf /var/cache/apt/archives/*
-
-# Install WP-CLI
-RUN curl -L https://github.com/wp-cli/wp-cli/releases/download/v${WP_CLI_VERSION}/wp-cli-${WP_CLI_VERSION}.phar -o /usr/local/bin/wp && \
-    chmod +x /usr/local/bin/wp \
-    && wp --info --allow-root
-
-# Create required directory structure
+# ==========================================
+# DIRECTORY STRUCTURE
+# ==========================================
 RUN mkdir -p \
     /site/press \
     /site/uploads \
-    /site/cache \
     /site/cache/page \
     /site/cache/minify \
     /site/cache/object \
     /site/cache/db \
     /site/cache/tmp \
-    /etc/nginx/ssl \
-    /etc/ssl/certs \
-    /var/www/certbot \
-    /etc/letsencrypt \
-    /var/run/php \
-    /var/log/nginx \
-    /var/log/php \
+    /var/log/presshost
+
+# Set permissions for directories
+RUN chown -R www-data:www-data \
+    /site/uploads \
+    /site/cache \
     /var/log/presshost \
-    /var/log/supervisor \
-    /var/log/system
+    && chmod -R 755 /site/cache \
+    && chmod 775 /site/cache/tmp
 
-# Set proper ownership for directories
-RUN chown -R www-data:www-data /var/run/php \
-    && chown -R www-data:www-data /var/log/nginx /var/log/php /var/log/presshost \
-    && chown -R www-data:www-data /site/uploads \
-    && chown -R www-data:www-data /site/cache \
-    && chown -R root:root /var/log/supervisor /var/log/system \
-    && chmod 755 /site \
-    && chmod 755 /site/uploads \
-    && chmod 755 /site/cache \
-    && chmod 755 /site/cache/page \
-    && chmod 755 /site/cache/minify \
-    && chmod 755 /site/cache/object \
-    && chmod 755 /site/cache/db \
-    && chmod 775 /site/cache/tmp \
-    && chmod 750 /var/run/php \
-    && chmod 755 /var/log/nginx /var/log/php /var/log/presshost /var/log/supervisor /var/log/system
+# ==========================================
+# NGINX CONFIGURATION
+# ==========================================
+# Copy custom NGINX configurations to conf.d
+COPY nginx/conf.d/ /etc/nginx/conf.d/
 
-# Copy configuration files
-COPY nginx/ /etc/nginx/
-COPY php/ /etc/php/${PHP_VERSION}/
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY scripts/ /usr/local/bin/
-COPY logrotate.conf /etc/logrotate.conf
-COPY logrotate.d/ /etc/logrotate.d/
-COPY --chown=www-data:www-data app/ /site/press/
+# Copy NGINX templates
+COPY nginx/*.tpl /nginx/
 
-# Copy wp-config.php
-COPY --chown=www-data:www-data wp-config.php /site/press/wp-config.php
+# ==========================================
+# HOOKS AND SCRIPTS
+# ==========================================
+# Copy common utilities script
+COPY press/common-utils.sh /press/
+RUN chmod +x /press/common-utils.sh
 
-COPY crontab /etc/cron.d/presshost
-RUN chmod 0644 /etc/cron.d/presshost
-RUN crontab /etc/cron.d/presshost
+# Copy hooks to /startup/ (executed by shinsenter/php on container start)
+COPY hooks/ /startup/
+RUN chmod +x /startup/*.sh
 
-# Set executable permissions on scripts
-RUN chmod +x /usr/local/bin/*.sh
+# Copy installers for WordPress/ClassicPress
+COPY press/install-*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/install-*.sh \
+    && ln -sf /usr/local/bin/install-wordpress.sh /usr/local/bin/install-wordpress \
+    && ln -sf /usr/local/bin/install-classicpress.sh /usr/local/bin/install-classicpress
 
-# Create convenient aliases for download scripts
-RUN ln -sf /usr/local/bin/download-wordpress.sh /usr/local/bin/download-wordpress && \
-    ln -sf /usr/local/bin/download-classicpress.sh /usr/local/bin/download-classicpress
+# ==========================================
+# WP-CONFIG
+# ==========================================
+# Download wp-config.php from official WordPress Docker repository
+ADD --chown=www-data:www-data https://raw.githubusercontent.com/docker-library/wordpress/master/wp-config-docker.php /site/press/wp-config.php
 
-# Logrotate
-RUN chmod 644 /etc/logrotate.conf
-RUN chmod 644 /etc/logrotate.d/
+# ==========================================
+# CRONTAB
+# ==========================================
+# Copy crontab configuration
+COPY crontab.d/presshost /etc/crontab.d/presshost
+RUN chmod 0644 /etc/crontab.d/presshost
 
-# Update supervisord configuration to use correct PHP version
-RUN sed -i "s/%(ENV_PHP_VERSION)s/${PHP_VERSION}/g" /etc/supervisor/conf.d/supervisord.conf
+# ==========================================
+# EXPOSE PORTS
+# ==========================================
+EXPOSE 80
+EXPOSE 443
 
-# Create PHP-FPM socket directory with proper permissions
-RUN mkdir -p /var/run/php \
-    && chown www-data:www-data /var/run/php \
-    && chmod 755 /var/run/php
+# ==========================================
+# VOLUMES
+# ==========================================
+VOLUME ["/site/press", "/site/uploads", "/site/cache", "/var/log"]
 
-# Expose ports (TCP for HTTP/HTTPS and UDP for QUIC/HTTP3)
-EXPOSE 80 443 443/udp
-
-# Define volumes
-# IMPORTANTE: /site/press, /site/uploads e /site/cache devem ser montados separadamente
-VOLUME ["/site/press", "/site/uploads", "/site/cache", "/var/www/certbot", "/etc/letsencrypt", "/etc/ssl/certs", "/var/log"]
-
+# ==========================================
+# WORKING DIR
+# ==========================================
 WORKDIR /site
-
-# Set entrypoint and command
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

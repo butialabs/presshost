@@ -1,0 +1,94 @@
+services:
+  # PressHost
+  presshost:
+    image: ghcr.io/butialabs/presshost:latest
+    container_name: presshost
+    restart: unless-stopped
+    environment:
+      # Database
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: mariadb
+      
+      # WordPress
+      WP_SITEURL: ${WP_SITEURL}
+      WP_HOME: ${WP_HOME}
+      
+      # Security Keys (generate at: https://api.wordpress.org/secret-key/1.1/salt/)
+      AUTH_KEY: ${AUTH_KEY}
+      SECURE_AUTH_KEY: ${SECURE_AUTH_KEY}
+      LOGGED_IN_KEY: ${LOGGED_IN_KEY}
+      NONCE_KEY: ${NONCE_KEY}
+      AUTH_SALT: ${AUTH_SALT}
+      SECURE_AUTH_SALT: ${SECURE_AUTH_SALT}
+      LOGGED_IN_SALT: ${LOGGED_IN_SALT}
+      NONCE_SALT: ${NONCE_SALT}
+      
+      # Timezone
+      TZ: ${TZ:-UTC}
+    volumes:
+      # WordPress/ClassicPress files
+      - /opt/press:/site/press
+      - /opt/uploads:/site/uploads
+      - /opt/cache:/site/cache
+      # Logs
+      - /opt/logs/app:/var/log
+    networks:
+      - presshost
+    ports:
+      - 8080:80      # HTTP
+      - 8443:443     # HTTPS
+    depends_on:
+      - mariadb
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # NGINX Proxy Manager
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - 80:80      # HTTP
+      - 443:443    # HTTPS
+      - 81:81      # Admin interface
+    environment:
+      DB_SQLITE_FILE: /data/database.sqlite
+    volumes:
+      - /opt/npm/data:/data
+      - /opt/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - presshost
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # MariaDB - Database
+  mariadb:
+    image: mariadb:11
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - /opt/mariadb/data:/var/lib/mysql
+    networks:
+      - presshost
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  presshost:
+    name: presshost
