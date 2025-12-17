@@ -131,6 +131,7 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `LOGS_PATH`    | `/site/logs`    | Logs directory path    |
 | `APP_USER`     | `www-data`      | Application user       |
 | `APP_GROUP`    | `www-data`      | Application group      |
+| `TZ`           | `UTC`           | Timezone               |
 
 ### PHP
 
@@ -194,8 +195,18 @@ The installer will guide you through WordPress or ClassicPress installation.
 | Variable       | Default | Description               |
 | -------------- | ------- | ------------------------- |
 | `VERBOSE`      | `false` | Enable verbose logging    |
+| `DEBUG`        | `false` | Enable debug logging      |
 | `LOG_MAX_SIZE` | `10M`   | Log max size for rotation |
 | `LOG_MAX_AGE`  | `30`    | Log max age for rotation  |
+
+### Installation
+
+These variables are used during the interactive installation process via `presshost` command:
+
+| Variable                       | Default  | Description                              |
+| ------------------------------ | -------- | ---------------------------------------- |
+| `INSTALL_WORDPRESS_VERSION`    | `latest` | Specific WordPress version to install    |
+| `INSTALL_CLASSICPRESS_VERSION` | `latest` | Specific ClassicPress version to install |
 
 ### Custom Constants
 
