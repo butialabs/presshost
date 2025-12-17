@@ -135,51 +135,67 @@ The installer will guide you through WordPress or ClassicPress installation.
 
 ### PHP
 
-| Variable                          | Default   | Description                                      |
-| --------------------------------- | --------- | ------------------------------------------------ |
-| `PHP_MEMORY_LIMIT`                | `256M`    | Memory limit                                     |
-| `PHP_MAX_EXECUTION_TIME`          | `300`     | Max execution time                               |
-| `PHP_POST_MAX_SIZE`               | `64M`     | Max POST size                                    |
-| `PHP_UPLOAD_MAX_FILESIZE`         | `64M`     | Max upload size                                  |
-| `PHP_MAX_INPUT_TIME`              | `60`      | Max input time                                   |
-| `PHP_MAX_INPUT_VARS`              | `1000`    | Max input variables                              |
-| `PHP_PM`                          | `dynamic` | Process manager type (static, dynamic, ondemand) |
-| `PHP_PM_MAX_CHILDREN`             | `20`      | Max children processes                           |
-| `PHP_PM_START_SERVERS`            | `2`       | Start servers                                    |
-| `PHP_PM_MIN_SPARE_SERVERS`        | `1`       | Min spare servers                                |
-| `PHP_PM_MAX_SPARE_SERVERS`        | `3`       | Max spare servers                                |
-| `PHP_PM_MAX_REQUESTS`             | `500`     | Max requests per child                           |
-| `PHP_OPCACHE_ENABLE`              | `1`       | Enable OPcache                                   |
-| `PHP_OPCACHE_MEMORY`              | `128`     | OPcache memory (MB)                              |
-| `PHP_OPCACHE_INTERNED_STRINGS`    | `16`      | Interned strings buffer (MB)                     |
-| `PHP_OPCACHE_MAX_FILES`           | `10000`   | Max cached files                                 |
-| `PHP_OPCACHE_REVALIDATE_FREQ`     | `2`       | Revalidate frequency (seconds)                   |
-| `PHP_OPCACHE_VALIDATE_TIMESTAMPS` | `1`       | Validate timestamps                              |
-| `PHP_SESSION_COOKIE_HTTPONLY`     | `1`       | Session cookie httponly                          |
-| `PHP_SESSION_COOKIE_SECURE`       | `1`       | Session cookie secure                            |
-| `PHP_SESSION_USE_STRICT_MODE`     | `1`       | Session use strict mode                          |
-| `PHP_APC_ENABLED`                 | `0`       | Enable APC                                       |
-| `PHP_APC_SHM_SIZE`                | `32M`     | APC shared memory size                           |
-| `PHP_APC_TTL`                     | `3600`    | APC TTL (seconds)                                |
-| `PHP_APC_ENABLE_CLI`              | `0`       | Enable APC for CLI                               |
-| `PHP_REALPATH_CACHE_SIZE`         | `16K`     | Realpath cache size                              |
-| `PHP_REALPATH_CACHE_TTL`          | `120`     | Realpath cache TTL (seconds)                     |
+| Variable                            | Default   | Description                                      |
+| ----------------------------------- | --------- | ------------------------------------------------ |
+| `PHP_MEMORY_LIMIT`                  | `256M`    | Memory limit                                     |
+| `PHP_MAX_EXECUTION_TIME`            | `120`     | Max execution time (seconds)                     |
+| `PHP_MAX_INPUT_TIME`                | `120`     | Max input time (seconds)                         |
+| `PHP_MAX_INPUT_VARS`                | `3000`    | Max input variables                              |
+| `PHP_POST_MAX_SIZE`                 | `64M`     | Max POST size                                    |
+| `PHP_UPLOAD_MAX_FILESIZE`           | `64M`     | Max upload size                                  |
+| `PHP_DEFAULT_SOCKET_TIMEOUT`        | `60`      | Default socket timeout (seconds)                 |
+| `PHP_OUTPUT_BUFFERING`              | `4096`    | Output buffering size                            |
+| `PHP_PM`                            | `dynamic` | Process manager type (static, dynamic, ondemand) |
+| `PHP_PM_MAX_CHILDREN`               | `50`      | Max children processes                           |
+| `PHP_PM_START_SERVERS`              | `10`      | Start servers (preforked workers)                |
+| `PHP_PM_MIN_SPARE_SERVERS`          | `10`      | Min spare servers                                |
+| `PHP_PM_MAX_SPARE_SERVERS`          | `35`      | Max spare servers                                |
+| `PHP_PM_MAX_REQUESTS`               | `1000`    | Max requests per child (prevents memory leaks)   |
+| `PHP_PM_PROCESS_IDLE_TIMEOUT`       | `10s`     | Idle timeout for ondemand PM                     |
+| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` | `300`     | Request terminate timeout (seconds)              |
+| `PHP_FPM_LISTEN_BACKLOG`            | `65535`   | Listen queue backlog size                        |
+| `PHP_FPM_RLIMIT_FILES`              | `65535`   | Max open files limit                             |
+| `PHP_OPCACHE_ENABLE`                | `1`       | Enable OPcache                                   |
+| `PHP_OPCACHE_MEMORY`                | `256`     | OPcache memory (MB)                              |
+| `PHP_OPCACHE_INTERNED_STRINGS`      | `16`      | Interned strings buffer (MB)                     |
+| `PHP_OPCACHE_MAX_FILES`             | `20000`   | Max cached files                                 |
+| `PHP_OPCACHE_REVALIDATE_FREQ`       | `2`       | Revalidate frequency (seconds)                   |
+| `PHP_OPCACHE_VALIDATE_TIMESTAMPS`   | `1`       | Validate timestamps (0 for production)           |
+| `PHP_OPCACHE_JIT`                   | `tracing` | JIT mode (tracing, function, off)                |
+| `PHP_OPCACHE_JIT_BUFFER_SIZE`       | `128M`    | JIT buffer size                                  |
+| `PHP_SESSION_COOKIE_HTTPONLY`       | `1`       | Session cookie httponly                          |
+| `PHP_SESSION_COOKIE_SECURE`         | `1`       | Session cookie secure                            |
+| `PHP_SESSION_USE_STRICT_MODE`       | `1`       | Session use strict mode                          |
+| `PHP_APC_ENABLED`                   | `1`       | Enable APCu                                      |
+| `PHP_APC_SHM_SIZE`                  | `64M`     | APCu shared memory size                          |
+| `PHP_APC_TTL`                       | `7200`    | APCu TTL (seconds)                               |
+| `PHP_APC_ENABLE_CLI`                | `0`       | Enable APCu for CLI                              |
+| `PHP_REALPATH_CACHE_SIZE`           | `4096K`   | Realpath cache size                              |
+| `PHP_REALPATH_CACHE_TTL`            | `600`     | Realpath cache TTL (seconds)                     |
 
 ### NGINX
 
-| Variable                            | Default | Description                 |
-| ----------------------------------- | ------- | --------------------------- |
-| `NGINX_CLIENT_MAX_BODY_SIZE`        | `64M`   | Client max body size        |
-| `NGINX_CACHE_MAX_SIZE`              | `1g`    | Cache max size              |
-| `NGINX_CACHE_INACTIVE`              | `60m`   | Cache inactive time         |
-| `NGINX_CLIENT_BODY_BUFFER_SIZE`     | `128k`  | Client body buffer size     |
-| `NGINX_CLIENT_HEADER_BUFFER_SIZE`   | `1k`    | Client header buffer size   |
-| `NGINX_LARGE_CLIENT_HEADER_BUFFERS` | `4 16k` | Large client header buffers |
-| `NGINX_OUTPUT_BUFFERS`              | `2 32k` | Output buffers              |
-| `NGINX_FASTCGI_BUFFER_SIZE`         | `128k`  | FastCGI buffer size         |
-| `NGINX_FASTCGI_BUFFERS`             | `8 16k` | FastCGI buffers             |
-| `NGINX_FASTCGI_BUSY_BUFFERS_SIZE`   | `256k`  | FastCGI busy buffers size   |
-| `NGINX_CACHE`                       | `true`  | Enable NGINX cache          |
+| Variable                            | Default  | Description                                       |
+| ----------------------------------- | -------- | ------------------------------------------------- |
+| `NGINX_CLIENT_MAX_BODY_SIZE`        | `64m`    | Client max body size                              |
+| `NGINX_CLIENT_BODY_BUFFER_SIZE`     | `128k`   | Client body buffer size                           |
+| `NGINX_CLIENT_HEADER_BUFFER_SIZE`   | `1k`     | Client header buffer size                         |
+| `NGINX_LARGE_CLIENT_HEADER_BUFFERS` | `4 16k`  | Large client header buffers                       |
+| `NGINX_OUTPUT_BUFFERS`              | `1 32k`  | Output buffers                                    |
+| `NGINX_FASTCGI_BUFFER_SIZE`         | `32k`    | FastCGI buffer size                               |
+| `NGINX_FASTCGI_BUFFERS`             | `16 16k` | FastCGI buffers                                   |
+| `NGINX_FASTCGI_BUSY_BUFFERS_SIZE`   | `64k`    | FastCGI busy buffers size                         |
+| `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `300`    | FastCGI connect timeout (must be >= PHP timeouts) |
+| `NGINX_FASTCGI_SEND_TIMEOUT`        | `300`    | FastCGI send timeout (must be >= PHP timeouts)    |
+| `NGINX_FASTCGI_READ_TIMEOUT`        | `300`    | FastCGI read timeout (must be >= PHP timeouts)    |
+| `NGINX_KEEPALIVE_TIMEOUT`           | `65`     | Keepalive timeout (seconds)                       |
+| `NGINX_KEEPALIVE_REQUESTS`          | `1000`   | Requests per keepalive                            |
+| `NGINX_CLIENT_BODY_TIMEOUT`         | `60`     | Client body timeout                               |
+| `NGINX_CLIENT_HEADER_TIMEOUT`       | `120`    | Client header timeout                             |
+| `NGINX_SEND_TIMEOUT`                | `60`     | Send timeout                                      |
+| `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache                        |
+| `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
+| `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
 
 ### SSL
 

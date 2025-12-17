@@ -44,11 +44,11 @@ http {
     resolver 1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 208.67.222.222 208.67.220.220 valid=60s;
     resolver_timeout 2s;
 
-    keepalive_timeout 65;
-    keepalive_requests 1000;
-    client_body_timeout 60;
-    client_header_timeout 120;
-    send_timeout 60;
+    keepalive_timeout ${NGINX_KEEPALIVE_TIMEOUT};
+    keepalive_requests ${NGINX_KEEPALIVE_REQUESTS};
+    client_body_timeout ${NGINX_CLIENT_BODY_TIMEOUT};
+    client_header_timeout ${NGINX_CLIENT_HEADER_TIMEOUT};
+    send_timeout ${NGINX_SEND_TIMEOUT};
 
     client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
     client_body_buffer_size ${NGINX_CLIENT_BODY_BUFFER_SIZE};
@@ -56,9 +56,9 @@ http {
     large_client_header_buffers ${NGINX_LARGE_CLIENT_HEADER_BUFFERS};
     output_buffers ${NGINX_OUTPUT_BUFFERS};
 
-    fastcgi_connect_timeout 60;
-    fastcgi_send_timeout 60;
-    fastcgi_read_timeout 60;
+    fastcgi_connect_timeout ${NGINX_FASTCGI_CONNECT_TIMEOUT};
+    fastcgi_send_timeout ${NGINX_FASTCGI_SEND_TIMEOUT};
+    fastcgi_read_timeout ${NGINX_FASTCGI_READ_TIMEOUT};
     fastcgi_buffer_size ${NGINX_FASTCGI_BUFFER_SIZE};
     fastcgi_buffers ${NGINX_FASTCGI_BUFFERS};
     fastcgi_busy_buffers_size ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE};
