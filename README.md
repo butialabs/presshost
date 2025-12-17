@@ -9,12 +9,12 @@
 
 ## Features
 
-⚡ Based on Debian + NGINX 1.26 + PHP 8.4
-🔐 Rootless by default
-🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
-🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
-📦 Separate code, uploads, cache, and logs — facilitates backup, restore, and migration.
-🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
+- ⚡ Based on Debian + NGINX 1.26 + PHP 8.4
+- 🔐 Rootless by default
+- 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
+- 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
+- 📦 Separate code, uploads, cache, and logs — facilitates backup, restore, and migration.
+- 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
 
 ## Quick Start
 
