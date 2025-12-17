@@ -1,0 +1,79 @@
+services:
+  # PressHost
+  presshost:
+    image: ghcr.io/butialabs/presshost:latest
+    container_name: presshost
+    restart: unless-stopped
+    environment:
+      DB_NAME: presshost
+      DB_USER: presshost
+      DB_PASSWORD: p@ssw0rd
+      DB_HOST: db
+      WP_SITEURL: https://your-domain.xyz
+      WP_HOME: https://your-domain.xyz
+      TZ: UTC
+    volumes:
+      - /opt/press:/site/press
+      - /opt/uploads:/site/uploads
+      - /opt/cache:/site/cache
+      - /opt/logs:/site/logs
+    networks:
+      - presshost
+    ports:
+      - 8080:80
+      - 8443:443
+    depends_on:
+      - mariadb
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Database
+  db:
+    image: mariadb:11
+    container_name: db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: p@ssw0rd
+      MYSQL_DATABASE: presshost
+      MYSQL_USER: presshost
+      MYSQL_PASSWORD: p@ssw0rd
+    volumes:
+      - /opt/presshost/db/data:/var/lib/mysql
+    networks:
+      - presshost
+    ports:
+      - 3306:3306
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # NGINX Proxy Manager
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+      - 81:81
+    environment:
+      DB_SQLITE_FILE: /data/database.sqlite
+    volumes:
+      - /opt/npm/data:/data
+      - /opt/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - presshost
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  presshost:
+    name: presshost

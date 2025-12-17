@@ -1,0 +1,275 @@
+#!/bin/bash
+set -e
+
+SCRIPT_NAME="PRESSHOST"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+source "${SCRIPT_DIR}/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
+
+show_main_menu() {
+    clear
+    echo ""
+    echo "==================================================="
+    echo "PressHost"
+    echo "==================================================="
+    echo ""
+    
+    if verify_press_installation; then
+        echo -e "${GREEN}✓ ${PRESS_TYPE} ${PRESS_VERSION} is installed${NC}"
+        echo ""
+        echo "1) View current installation info"
+        echo "2) Exit"
+        echo ""
+        echo -n "Please select an option (1-2): "
+    else
+        echo -e "${YELLOW}! No WordPress/ClassicPress installation detected${NC}"
+        echo ""
+        echo "1) Install WordPress"
+        echo "2) Install ClassicPress"
+        echo "3) Exit"
+        echo ""
+        echo -n "Please select an option (1-3): "
+    fi
+}
+
+get_input() {
+    local prompt="$1"
+    local default_value="$2"
+    local validation_regex="$3"
+    
+    while true; do
+        if [[ -n "$default_value" ]]; then
+            echo -n "${prompt} [${default_value}]: "
+        else
+            echo -n "${prompt}: "
+        fi
+        read input
+        [[ -z "$input" && -n "$default_value" ]] && input="$default_value"
+        if [[ -n "$validation_regex" ]]; then
+            if [[ "$input" =~ $validation_regex ]]; then
+                echo "$input"
+                return 0
+            else
+                echo -e "${RED}Invalid input. Please try again.${NC}"
+            fi
+        else
+            echo "$input"
+            return 0
+        fi
+    done
+}
+
+validate_email() {
+    [[ "$1" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+}
+
+get_installation_params() {
+    local press_type="$1"
+    
+    echo ""
+    echo "==================================================="
+    echo "${press_type} Installation"
+    echo "==================================================="
+    echo ""
+    
+    local site_url
+    site_url=$(get_input "Site URL (e.g., https://example.com)" "" "^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}.*$")
+    
+    echo ""
+    echo "Select version:"
+    echo "1) Latest version"
+    echo "2) Specific version"
+    echo -n "Please select (1-2) [1]: "
+    read version_choice
+    
+    local version=""
+    if [[ "$version_choice" == "2" ]]; then
+        if [[ "$press_type" == "WordPress" ]]; then
+            version=$(get_input "WordPress version (e.g., 6.4.3)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
+        else
+            version=$(get_input "ClassicPress version (e.g., 1.6.2)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
+        fi
+    fi
+    
+    local site_title
+    site_title=$(get_input "Site Title" "PressHost Site")
+    
+    local admin_user
+    admin_user=$(get_input "Admin Username" "admin" "^[a-zA-Z0-9_]{3,20}$")
+    
+    local admin_email
+    while true; do
+        admin_email=$(get_input "Admin Email" "")
+        if validate_email "$admin_email"; then
+            break
+        else
+            echo -e "${RED}Invalid email format. Please try again.${NC}"
+        fi
+    done
+    
+    local admin_pass
+    local use_generated_pass="false"
+    admin_pass=$(get_input "Admin Password (leave empty to generate)" "")
+    
+    if [[ -z "$admin_pass" ]]; then
+        admin_pass=$(generate_password 16)
+        use_generated_pass="true"
+    fi
+    
+    local locale
+    locale=$(get_input "Site Locale" "en_US" "^[a-z]{2}_[A-Z]{2}$")
+    
+    echo -n "Skip installation email notification? (y/n) [y]: "
+    read skip_email_input
+    local skip_email="true"
+    [[ "$skip_email_input" =~ ^[Nn]$ ]] && skip_email="false"
+    
+    export INSTALL_URL="$site_url"
+    export INSTALL_TITLE="$site_title"
+    export INSTALL_USER="$admin_user"
+    export INSTALL_PASS="$admin_pass"
+    export INSTALL_EMAIL="$admin_email"
+    export INSTALL_SKIP_EMAIL="$skip_email"
+    export INSTALL_LOCALE="$locale"
+    
+    if [[ -n "$version" ]]; then
+        if [[ "$press_type" == "WordPress" ]]; then
+            export INSTALL_WORDPRESS_VERSION="$version"
+        else
+            export INSTALL_CLASSICPRESS_VERSION="$version"
+        fi
+    fi
+    
+    echo ""
+    echo "==================================================="
+    echo "Summary"
+    echo "==================================================="
+    echo ""
+    echo -e "${CYAN}Press:${NC} $press_type"
+    [[ -n "$version" ]] && echo -e "${CYAN}Version:${NC} $version" || echo -e "${CYAN}Version:${NC} Latest"
+    echo -e "${CYAN}URL:${NC} $site_url"
+    echo -e "${CYAN}Title:${NC} $site_title"
+    echo -e "${CYAN}Admin User:${NC} $admin_user"
+    echo -e "${CYAN}Admin Email:${NC} $admin_email"
+    if [[ "$use_generated_pass" == "true" ]]; then
+        echo -e "${CYAN}Admin Password:${NC} $admin_pass"
+        echo -e "${YELLOW}⚠ Save this password - it will not be shown again!${NC}"
+    fi
+    echo -e "${CYAN}Locale:${NC} $locale"
+    echo ""
+    
+    echo -n "Proceed with installation? (y/n) [y]: "
+    read confirm
+    [[ "$confirm" =~ ^[Nn]$ ]] && { echo "Installation cancelled."; return 1; }
+    return 0
+}
+
+show_installation_info() {
+    echo ""
+    echo "==================================================="
+    echo "Information"
+    echo "==================================================="
+    echo ""
+    
+    if verify_press_installation; then
+        echo -e "${GREEN}✓ ${PRESS_TYPE} is installed${NC}"
+        echo ""
+        echo -e "${CYAN}Type:${NC} $PRESS_TYPE"
+        echo -e "${CYAN}Version:${NC} $PRESS_VERSION"
+        
+        if command -v wp >/dev/null 2>&1; then
+            local site_url
+            site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+            echo -e "${CYAN}Site URL:${NC} $site_url"
+            local site_title
+            site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+            echo -e "${CYAN}Site Title:${NC} $site_title"
+        fi
+        
+        echo -e "${CYAN}Installation Directory:${NC} $PRESS_WP_DIR"
+        echo -e "${CYAN}Uploads Directory:${NC} $PRESS_UPLOADS_DIR"
+        echo -e "${CYAN}Cache Directory:${NC} $PRESS_CACHE_DIR"
+    else
+        echo -e "${RED}✗ No WordPress/ClassicPress installation found${NC}"
+    fi
+    
+    echo ""
+    read -p "Press Enter to continue..."
+}
+
+install_wordpress() {
+    if verify_press_installation; then
+        echo -e "${YELLOW}${PRESS_TYPE} is already installed.${NC}"
+        echo "Installation cancelled."
+        return 1
+    fi
+    
+    get_installation_params "WordPress" || return 1
+    info "Starting WordPress installation..."
+    
+    if "${SCRIPT_DIR}/install-wordpress.sh"; then
+        success "WordPress installation completed successfully!"
+        return 0
+    else
+        error "WordPress installation failed!"
+        return 1
+    fi
+}
+
+install_classicpress() {
+    if verify_press_installation; then
+        echo -e "${YELLOW}${PRESS_TYPE} is already installed.${NC}"
+        echo "Installation cancelled."
+        return 1
+    fi
+    
+    get_installation_params "ClassicPress" || return 1
+    info "Starting ClassicPress installation..."
+    
+    if "${SCRIPT_DIR}/install-classicpress.sh"; then
+        success "ClassicPress installation completed successfully!"
+        return 0
+    else
+        error "ClassicPress installation failed!"
+        return 1
+    fi
+}
+
+main() {
+    while true; do
+        show_main_menu
+        read choice
+        
+        if verify_press_installation; then
+            case $choice in
+                1) show_installation_info ;;
+                2)
+                    break
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option. Please try again.${NC}"
+                    sleep 2
+                    ;;
+            esac
+        else
+            case $choice in
+                1) install_wordpress ;;
+                2) install_classicpress ;;
+                3)
+                    break
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option. Please try again.${NC}"
+                    sleep 2
+                    ;;
+            esac
+        fi
+        
+        echo ""
+        echo -n "Press Enter to continue..."
+        read
+    done
+}
+
+main "$@"

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+TARGET_USER="${APP_USER:-www-data}"
+TARGET_GROUP="${APP_GROUP:-www-data}"
+
+[ $# -eq 0 ] && { echo "Usage: fast-chown <path>..." >&2; exit 1; }
+
+for path in "$@"; do
+    [ -e "$path" ] || continue
+    find "$path" \( ! -user "$TARGET_USER" -o ! -group "$TARGET_GROUP" \) \
+        -exec chown "${TARGET_USER}:${TARGET_GROUP}" {} + 2>/dev/null || true
+done
