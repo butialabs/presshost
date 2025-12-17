@@ -185,14 +185,14 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `NGINX_FASTCGI_BUFFER_SIZE`         | `32k`    | FastCGI buffer size                               |
 | `NGINX_FASTCGI_BUFFERS`             | `16 16k` | FastCGI buffers                                   |
 | `NGINX_FASTCGI_BUSY_BUFFERS_SIZE`   | `64k`    | FastCGI busy buffers size                         |
-| `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `300`    | FastCGI connect timeout (must be >= PHP timeouts) |
-| `NGINX_FASTCGI_SEND_TIMEOUT`        | `300`    | FastCGI send timeout (must be >= PHP timeouts)    |
-| `NGINX_FASTCGI_READ_TIMEOUT`        | `300`    | FastCGI read timeout (must be >= PHP timeouts)    |
-| `NGINX_KEEPALIVE_TIMEOUT`           | `65`     | Keepalive timeout (seconds)                       |
+| `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `300s`   | FastCGI connect timeout (must be >= PHP timeouts) |
+| `NGINX_FASTCGI_SEND_TIMEOUT`        | `300s`   | FastCGI send timeout (must be >= PHP timeouts)    |
+| `NGINX_FASTCGI_READ_TIMEOUT`        | `300s`   | FastCGI read timeout (must be >= PHP timeouts)    |
+| `NGINX_KEEPALIVE_TIMEOUT`           | `65s`    | Keepalive timeout                                 |
 | `NGINX_KEEPALIVE_REQUESTS`          | `1000`   | Requests per keepalive                            |
-| `NGINX_CLIENT_BODY_TIMEOUT`         | `60`     | Client body timeout                               |
-| `NGINX_CLIENT_HEADER_TIMEOUT`       | `120`    | Client header timeout                             |
-| `NGINX_SEND_TIMEOUT`                | `60`     | Send timeout                                      |
+| `NGINX_CLIENT_BODY_TIMEOUT`         | `60s`    | Client body timeout                               |
+| `NGINX_CLIENT_HEADER_TIMEOUT`       | `120s`   | Client header timeout                             |
+| `NGINX_SEND_TIMEOUT`                | `60s`    | Send timeout                                      |
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache                        |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
