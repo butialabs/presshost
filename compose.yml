@@ -14,24 +14,24 @@ services:
       WP_HOME: https://${SITE_URL}
       TZ: UTC
 
-      SSL_CERT_PATH: /site/ssl/live/${SITE_URL}/fullchain.pem
-      SSL_PRIVATE_PATH: /site/ssl/live/${SITE_URL}/privkey.pem
-      SSL_TRUSTED_CERT_PATH: /site/ssl/live/${SITE_URL}/chain.pem
-      NGINX_SSL_STAPLING: "on"
-      NGINX_SSL_STAPLING_VERIFY: "on"
+      # SSL_CERT_PATH: /site/ssl/live/${SITE_URL}/fullchain.pem
+      # SSL_PRIVATE_PATH: /site/ssl/live/${SITE_URL}/privkey.pem
+      # SSL_TRUSTED_CERT_PATH: /site/ssl/live/${SITE_URL}/chain.pem
+      # NGINX_SSL_STAPLING: "on"
+      # NGINX_SSL_STAPLING_VERIFY: "on"
     volumes:
       - /opt/press:/site/press
       - /opt/uploads:/site/uploads
       - /opt/cache:/site/cache
       - /opt/logs:/site/logs
-      - /opt/certbot:/site/ssl
+      # - /opt/certbot:/site/ssl
     networks:
       - presshost
     ports:
       - 80:80
       - 443:443
     depends_on:
-      - mariadb
+      - db
     logging:
       driver: json-file
       options:
