@@ -49,7 +49,7 @@ services:
       MYSQL_USER: presshost
       MYSQL_PASSWORD: p@ssw0rd
     volumes:
-      - /opt/presshost/db/data:/var/lib/mysql
+      - /opt/db/data:/var/lib/mysql
     networks:
       - presshost
     ports:
