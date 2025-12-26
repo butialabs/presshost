@@ -199,12 +199,13 @@ The installer will guide you through WordPress or ClassicPress installation.
 
 ### SSL
 
-| Variable                    | Default                 | Description           |
-| --------------------------- | ----------------------- | --------------------- |
-| `SSL_CERT_PATH`             | `/etc/nginx/server.crt` | SSL certificate path  |
-| `SSL_PRIVATE_PATH`          | `/etc/nginx/server.key` | SSL private key path  |
-| `NGINX_SSL_STAPLING`        | `off`                   | Enable OCSP stapling  |
-| `NGINX_SSL_STAPLING_VERIFY` | `off`                   | Verify OCSP responses |
+| Variable                    | Default                 | Description                              |
+| --------------------------- | ----------------------- | ---------------------------------------- |
+| `SSL_CERT_PATH`             | `/etc/nginx/server.crt` | SSL certificate path                     |
+| `SSL_PRIVATE_PATH`          | `/etc/nginx/server.key` | SSL private key path                     |
+| `SSL_TRUSTED_CERT_PATH`     | `/etc/nginx/server.crt` | Trusted CA certificate for OCSP stapling |
+| `NGINX_SSL_STAPLING`        | `off`                   | Enable OCSP stapling                     |
+| `NGINX_SSL_STAPLING_VERIFY` | `off`                   | Verify OCSP responses                    |
 
 ### Logging
 
@@ -238,7 +239,7 @@ Any environment variable starting with `PRESS_` is automatically converted to a 
 
 ### Using signed SSL
 
-#### Via Nginx Proxy Manager
+#### Via Certbot / Let's Encrypt
 
 ```yaml
 services:
@@ -246,14 +247,17 @@ services:
     image: ghcr.io/butialabs/presshost:latest
     environment:
       # ...
-      SSL_CERT_PATH: /etc/letsencrypt/live/npm-{id}/fullchain.pem
-      SSL_PRIVATE_PATH: /etc/letsencrypt/live/npm-{id}/privkey.pem
+      SSL_CERT_PATH: /site/ssl/live/your-domain.com/fullchain.pem
+      SSL_PRIVATE_PATH: /site/ssl/live/your-domain.com/privkey.pem
+      SSL_TRUSTED_CERT_PATH: /site/ssl/live/your-domain.com/chain.pem
       NGINX_SSL_STAPLING: "on"
       NGINX_SSL_STAPLING_VERIFY: "on"
     volumes:
       # ...
-      - /opt/npm/letsencrypt:/etc/letsencrypt:ro
+      - /etc/letsencrypt:/site/ssl:ro
 ```
+
+> **Note:** The `SSL_TRUSTED_CERT_PATH` variable should point to the intermediate certificate chain (`chain.pem`) for OCSP stapling to work correctly. Without this, you may see warnings like "ssl_stapling ignored, no OCSP responder URL in the certificate".
 
 > **Note:** Nginx automatically reloads daily at 00:00 (container timezone) to pick up renewed certificates. This ensures seamless certificate rotation without manual intervention.
 

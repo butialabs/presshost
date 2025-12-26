@@ -12,6 +12,9 @@ server {
 
     ssl_certificate ${SSL_CERT_PATH};
     ssl_certificate_key ${SSL_PRIVATE_PATH};
+    ssl_trusted_certificate ${SSL_TRUSTED_CERT_PATH};
+    ssl_stapling ${NGINX_SSL_STAPLING};
+    ssl_stapling_verify ${NGINX_SSL_STAPLING_VERIFY};
 
     include conf.d/security.conf;
 

@@ -82,6 +82,7 @@ ENV TZ=UTC \
     NGINX_SSL_STAPLING_VERIFY="off" \
     SSL_CERT_PATH="/etc/nginx/server.crt" \
     SSL_PRIVATE_PATH="/etc/nginx/server.key" \
+    SSL_TRUSTED_CERT_PATH="/etc/nginx/server.crt" \
     ALLOW_RUNTIME_PHP_ENVVARS=true \
     LOG_MAX_SIZE=100M \
     LOG_MAX_AGE=1 \
