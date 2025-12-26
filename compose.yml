@@ -17,8 +17,6 @@ services:
       # SSL_CERT_PATH: /site/ssl/live/${SITE_URL}/fullchain.pem
       # SSL_PRIVATE_PATH: /site/ssl/live/${SITE_URL}/privkey.pem
       # SSL_TRUSTED_CERT_PATH: /site/ssl/live/${SITE_URL}/chain.pem
-      # NGINX_SSL_STAPLING: "on"
-      # NGINX_SSL_STAPLING_VERIFY: "on"
     volumes:
       - /opt/press:/site/press
       - /opt/uploads:/site/uploads
@@ -71,6 +69,7 @@ services:
       - EMAIL: tecnologia@${SITE_URL}
       - DOMAINS: ${SITE_URL},www.${SITE_URL}
       - PLUGIN: cloudflare
+      - INTERVAL: 0 0 1 * *
       - CLOUDFLARE_TOKEN: null
 
 networks:
