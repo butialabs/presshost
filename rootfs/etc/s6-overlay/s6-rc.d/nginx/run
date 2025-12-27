@@ -1,3 +1,2 @@
-#!/command/execlineb -P
-with-contenv
-/usr/sbin/nginx -g "daemon off;"
+#!/command/with-contenv bash
+exec /usr/sbin/nginx -g "daemon off;"
