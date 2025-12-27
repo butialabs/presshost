@@ -103,7 +103,7 @@ http {
         ~*/my-account/ 1;
         ~*/fpm-status 1;
         ~*/fpm-ping 1;
-        ~*/nginx_status 1;
+        ~*/nginx-status 1;
     }
 
     map $http_cookie $skip_cache_cookie {
