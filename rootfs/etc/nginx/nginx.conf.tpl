@@ -64,13 +64,6 @@ http {
     variables_hash_max_size 2048;
     variables_hash_bucket_size 128;
 
-    limit_req_zone $binary_remote_addr zone=login:10m rate=${NGINX_LIMIT_REQ_LOGIN_RATE};
-    limit_req_zone $binary_remote_addr zone=api_limit:50m rate=${NGINX_LIMIT_REQ_API_RATE};
-    limit_req_zone $binary_remote_addr zone=general_limit:50m rate=${NGINX_LIMIT_REQ_GENERAL_RATE};
-    limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
-    limit_req_status 429;
-    limit_conn_status 429;
-
     log_format detailed '$remote_addr - $http_host [$time_local] '
                         '"$request" $status $body_bytes_sent '
                         '"$http_referer" "$http_user_agent" '
