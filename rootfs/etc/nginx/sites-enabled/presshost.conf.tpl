@@ -23,8 +23,8 @@ server {
 
     index index.php;
 
-    limit_req zone=general_limit burst=20 nodelay;
-    limit_conn conn_limit 10;
+    limit_req zone=general_limit burst=${NGINX_LIMIT_REQ_BURST} nodelay;
+    limit_conn conn_limit ${NGINX_LIMIT_CONN};
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;

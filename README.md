@@ -193,6 +193,11 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `NGINX_CLIENT_BODY_TIMEOUT`         | `60s`    | Client body timeout                               |
 | `NGINX_CLIENT_HEADER_TIMEOUT`       | `120s`   | Client header timeout                             |
 | `NGINX_SEND_TIMEOUT`                | `60s`    | Send timeout                                      |
+| `NGINX_LIMIT_REQ_LOGIN_RATE`        | `10r/m`  | Rate limit for login requests (per IP)            |
+| `NGINX_LIMIT_REQ_API_RATE`          | `200r/s` | Rate limit for API requests (per IP)              |
+| `NGINX_LIMIT_REQ_GENERAL_RATE`      | `100r/s` | Rate limit for general requests (per IP)          |
+| `NGINX_LIMIT_REQ_BURST`             | `50`     | Burst size for rate limiting                      |
+| `NGINX_LIMIT_CONN`                  | `50`     | Max concurrent connections per IP                 |
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache                        |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
