@@ -158,11 +158,14 @@ COPY --chmod=755 rootfs/usr/local/bin/ /usr/local/bin/
 COPY rootfs/etc/nginx/ /etc/nginx/
 RUN chmod 644 /etc/nginx/server.crt && chmod 600 /etc/nginx/server.key && chmod 644 /etc/nginx/dhparam.pem
 COPY rootfs/etc/s6-overlay/ /etc/s6-overlay/
-# Fix Windows line endings (CRLF -> LF) and set permissions for s6-overlay files
-RUN find /etc/s6-overlay -type f -exec sed -i 's/\r$//' {} \; \
-    && chmod +x /etc/s6-overlay/scripts/* \
+RUN chmod +x /etc/s6-overlay/scripts/* \
     && find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \; \
-    && find /etc/s6-overlay/s6-rc.d -name "up" -exec chmod +x {} \;
+    && find /etc/s6-overlay/s6-rc.d -name "up" -exec chmod +x {} \; \
+    && if [ -f /etc/s6-overlay/s6-rc.d/php-fpm/run.tpl ]; then \
+         envsubst '$PHP_VERSION' < /etc/s6-overlay/s6-rc.d/php-fpm/run.tpl > /etc/s6-overlay/s6-rc.d/php-fpm/run \
+         && chmod +x /etc/s6-overlay/s6-rc.d/php-fpm/run \
+         && rm -f /etc/s6-overlay/s6-rc.d/php-fpm/run.tpl; \
+       fi
 COPY rootfs/etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf.tpl
 COPY rootfs/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl
 COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
