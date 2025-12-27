@@ -84,9 +84,9 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `FORCE_SSL_ADMIN`            | `true`       | Force SSL for admin                                 |
 | `FORCE_SSL_LOGIN`            | `true`       | Force SSL for login                                 |
 | `AUTOSAVE_INTERVAL`          | `120`        | Autosave interval (seconds)                         |
-| `WP_POST_REVISIONS`          | `-1`         | Post revisions limit (-1 for unlimited)             |
-| `WP_MEMORY_LIMIT`            | `512M`       | Memory limit                                        |
-| `WP_MAX_MEMORY_LIMIT`        | `512M`       | Maximum memory limit                                |
+| `WP_POST_REVISIONS`          | `30`         | Post revisions limit (-1 for unlimited)             |
+| `WP_MEMORY_LIMIT`            | `256M`       | Memory limit                                        |
+| `WP_MAX_MEMORY_LIMIT`        | `512M`       | Maximum memory limit on Admin                       |
 | `WP_CACHE`                   | `false`      | Enable caching                                      |
 | `WP_CACHE_KEY_SALT`          | ``           | Cache key salt                                      |
 | `MEDIA_TRASH`                | `true`       | Enable media trash functionality                    |
@@ -137,7 +137,7 @@ The installer will guide you through WordPress or ClassicPress installation.
 
 | Variable                            | Default   | Description                                      |
 | ----------------------------------- | --------- | ------------------------------------------------ |
-| `PHP_MEMORY_LIMIT`                  | `256M`    | Memory limit                                     |
+| `PHP_MEMORY_LIMIT`                  | `512M`    | Memory limit                                     |
 | `PHP_MAX_EXECUTION_TIME`            | `120`     | Max execution time (seconds)                     |
 | `PHP_MAX_INPUT_TIME`                | `120`     | Max input time (seconds)                         |
 | `PHP_MAX_INPUT_VARS`                | `3000`    | Max input variables                              |
