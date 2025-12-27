@@ -1,23 +1,30 @@
-# Auto detect text files and perform LF normalization
 * text=auto
 
-# Shell scripts must have LF line endings
+# Shell scripts
 *.sh text eol=lf
 rootfs/usr/local/bin/* text eol=lf
-rootfs/docker-entrypoint.sh text eol=lf
 
-# Docker files
+# Docker
 Dockerfile text eol=lf
 docker-compose*.yml text eol=lf
 compose*.yml text eol=lf
 *.dockerfile text eol=lf
 
-# Configuration templates
+# Templates
 *.tpl text eol=lf
 *.conf text eol=lf
 *.ini text eol=lf
 
-# Keep Windows batch files with CRLF
+# S6-overlay
+rootfs/etc/s6-overlay/** text eol=lf
+rootfs/etc/s6-overlay/scripts/* text eol=lf
+rootfs/etc/s6-overlay/s6-rc.d/**/type text eol=lf
+rootfs/etc/s6-overlay/s6-rc.d/**/run text eol=lf
+rootfs/etc/s6-overlay/s6-rc.d/**/up text eol=lf
+rootfs/etc/s6-overlay/s6-rc.d/**/contents.d/* text eol=lf
+rootfs/etc/s6-overlay/s6-rc.d/**/dependencies.d/* text eol=lf
+
+# Windows (CRLF)
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf

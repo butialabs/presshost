@@ -6,10 +6,11 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PHP Version](https://img.shields.io/badge/php-8.4-purple.svg)](https://www.php.net/)
 [![NGINX](https://img.shields.io/badge/nginx-1.26-brightgreen.svg)](https://nginx.org/)
+[![s6-overlay](https://img.shields.io/badge/s6--overlay-3.2.1.0-orange.svg)](https://github.com/just-containers/s6-overlay)
 
 ## Features
 
-- ⚡ Based on Debian + NGINX 1.26 + PHP 8.4
+- ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🔐 Rootless by default
 - 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
 - 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).

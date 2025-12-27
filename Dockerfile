@@ -1,5 +1,6 @@
 FROM debian:trixie-slim
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
 LABEL maintainer="Butiá Labs <mecairam@butialabs.com>" \
     org.opencontainers.image.title="PressHost" \
@@ -13,6 +14,7 @@ ARG PHP_VERSION=8.4
 ARG NGINX_VERSION=1.26.3-3+deb13u1
 ARG COMPOSER_VERSION=2.9.2
 ARG WPCLI_VERSION=2.12.0
+ARG S6_OVERLAY_VERSION=3.2.1.0
 
 ENV TZ=UTC \
     LANG=C.UTF-8 \
@@ -98,7 +100,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     debian-archive-keyring \
     gnupg \
     unzip \
-    supervisor \
+    xz-utils \
     cron \
     logrotate \
     mariadb-client \
@@ -130,6 +132,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /etc/nginx/sites-enabled/* /etc/nginx/sites-available/* \
     && rm -rf /var/lib/apt/lists/*
 
+# Install s6-overlay v3
+RUN set -eux; \
+    S6_ARCH=""; \
+    case "${TARGETARCH}" in \
+        amd64) S6_ARCH="x86_64" ;; \
+        arm64) S6_ARCH="aarch64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -o /tmp/s6-overlay-noarch.tar.xz; \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" -o /tmp/s6-overlay-arch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz; \
+    rm -f /tmp/s6-overlay-*.tar.xz
+
 RUN curl -fsSL -o /usr/local/bin/composer https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar \
     && chmod +x /usr/local/bin/composer
 
@@ -141,15 +157,18 @@ RUN mkdir -p /site/press /site/uploads /site/cache /site/logs $WP_CLI_DIR $WP_CL
 COPY --chmod=755 rootfs/usr/local/bin/ /usr/local/bin/
 COPY rootfs/etc/nginx/ /etc/nginx/
 RUN chmod 644 /etc/nginx/server.crt && chmod 600 /etc/nginx/server.key && chmod 644 /etc/nginx/dhparam.pem
-COPY rootfs/etc/supervisor/supervisord.conf.tpl /etc/supervisor/supervisord.conf.tpl
-COPY rootfs/etc/supervisor/conf.d/ /etc/supervisor/conf.d/
+COPY rootfs/etc/s6-overlay/ /etc/s6-overlay/
+# Fix Windows line endings (CRLF -> LF) and set permissions for s6-overlay files
+RUN find /etc/s6-overlay -type f -exec sed -i 's/\r$//' {} \; \
+    && chmod +x /etc/s6-overlay/scripts/* \
+    && find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \; \
+    && find /etc/s6-overlay/s6-rc.d -name "up" -exec chmod +x {} \;
 COPY rootfs/etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf.tpl
 COPY rootfs/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl
 COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
 COPY --chmod=644 --chown=root:root rootfs/etc/cron.d/presshost.tpl /etc/cron.d/presshost.tpl
 COPY /rootfs/site/press/index.php /site/press/index.php
 COPY /rootfs/site/press/wp-config.php /tmp/wp-config.php
-COPY --chmod=755 rootfs/docker-entrypoint.sh /docker-entrypoint.sh
 
 WORKDIR /site/press
 
@@ -161,4 +180,4 @@ VOLUME ["/site/press", "/site/uploads", "/site/cache", "/site/logs"]
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost/ -o /dev/null || exit 1
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/init"]

@@ -29,44 +29,52 @@ autoenv_tpl() {
     fi
 }
 
-verbose_log "Starting PressHost..."
+verbose_log "Starting PressHost initialization..."
 
+# Timezone setup
 if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
     ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
     echo "$TZ" > /etc/timezone
 fi
 
+# Runtime directories
 verbose_log "Setting up runtime directories..."
 mkdir -p /run/nginx /run/php "${CACHE_PATH}/nginx/fastcgi" "${CACHE_PATH}"
 fast-chown /run/php /run/nginx "${CACHE_PATH}/nginx"
 
+# Logrotate configuration
 if [ -f "/etc/logrotate.d/presshost.tpl" ]; then
     autoenv_tpl /etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost
     verbose_log "Log rotation configured"
 fi
 
+# PHP environment variables configuration
 if [ "${ALLOW_RUNTIME_PHP_ENVVARS}" = "true" ]; then
     export PHP_CLEAR_ENV="no"
 else
     export PHP_CLEAR_ENV="yes"
 fi
 
+# PHP-FPM pool configuration
 if [ -f "/etc/php/8.4/fpm/pool.d/www.conf.tpl" ]; then
     autoenv_tpl /etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf
     verbose_log "PHP-FPM pool configuration generated"
 fi
 
+# PHP ini configuration
 if [ -f "/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl" ]; then
     autoenv_tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini
     cp /etc/php/8.4/fpm/conf.d/99-presshost.ini /etc/php/8.4/cli/conf.d/99-presshost.ini
     verbose_log "PHP ini configuration generated"
 fi
 
+# NGINX configuration
 if [ -f "/etc/nginx/nginx.conf.tpl" ]; then
     autoenv_tpl /etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf
     verbose_log "NGINX configuration generated"
 fi
 
+# NGINX cache configuration
 if [ "${NGINX_CACHE}" = "false" ]; then
     echo "# Cache - Disabled" > /etc/nginx/cache_php_fastcgi.conf
     echo "# Cache - Disabled" > /etc/nginx/cache_server.conf
@@ -75,23 +83,13 @@ else
     verbose_log "NGINX FastCGI cache enabled"
 fi
 
+# NGINX site configuration
 if [ -f "/etc/nginx/sites-enabled/presshost.conf.tpl" ]; then
     autoenv_tpl /etc/nginx/sites-enabled/presshost.conf.tpl /etc/nginx/sites-enabled/presshost.conf
     verbose_log "NGINX site configuration generated"
 fi
 
-if [ -f "/etc/supervisor/supervisord.conf.tpl" ]; then
-    autoenv_tpl /etc/supervisor/supervisord.conf.tpl /etc/supervisor/supervisord.conf
-    verbose_log "Supervisor configuration generated"
-fi
-
-for tpl in /etc/supervisor/conf.d/*.tpl; do
-    if [ -f "$tpl" ]; then
-        conf="${tpl%.tpl}"
-        autoenv_tpl "$tpl" "$conf"
-    fi
-done
-
+# WordPress cache symlink
 if [ -d "${APP_PATH}/wp-content" ]; then
     if [ -d "${APP_PATH}/wp-content/cache" ] && [ ! -L "${APP_PATH}/wp-content/cache" ]; then
         mkdir -p "${CACHE_PATH}"
@@ -109,6 +107,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     verbose_log "Cache symlink created"
 fi
 
+# WordPress uploads symlink
 if [ -d "${APP_PATH}/wp-content" ]; then
     if [ -d "${APP_PATH}/wp-content/uploads" ] && [ ! -L "${APP_PATH}/wp-content/uploads" ]; then
         mkdir -p "${UPLOADS_PATH}"
@@ -126,6 +125,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     verbose_log "Uploads symlink created"
 fi
 
+# Cron configuration
 if [ -f "/etc/cron.d/presshost.tpl" ]; then
     envsubst '$APP_PATH $LOGS_PATH' < /etc/cron.d/presshost.tpl > /etc/cron.d/presshost
     chmod 644 /etc/cron.d/presshost
@@ -133,11 +133,10 @@ if [ -f "/etc/cron.d/presshost.tpl" ]; then
     verbose_log "PressHost cron configured"
 fi
 
+# Cleanup template files
 find /etc -name "*.tpl" -type f -delete 2>/dev/null || true
 
+# Fix ownership
 fast-chown "${APP_PATH}"
 
-verbose_log "PressHost Ready!"
-
-exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
-
+verbose_log "PressHost initialization complete!"
