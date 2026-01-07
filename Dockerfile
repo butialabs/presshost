@@ -178,8 +178,6 @@ WORKDIR /site/press
 EXPOSE 80
 EXPOSE 443
 
-VOLUME ["/site/press", "/site/uploads", "/site/cache", "/site/logs"]
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost/ -o /dev/null || exit 1
 
