@@ -114,10 +114,9 @@ get_installation_params() {
     echo "Select version:"
     echo "1) Latest version"
     echo "2) Specific version"
-    echo -n "Please select (1-2) [1]: "
     
     local version_choice=""
-    if read -t "$INPUT_TIMEOUT" version_choice 2>/dev/null; then
+    if read -t "$INPUT_TIMEOUT" -p "Please select (1-2) [1]: " version_choice; then
         if [[ "$version_choice" == "2" ]]; then
             if [[ "$press_type" == "WordPress" ]]; then
                 version=$(get_input "WordPress version (e.g., 6.4.3)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
@@ -173,9 +172,8 @@ get_installation_params() {
     
     # Email notification
     local skip_email="true"
-    echo -n "Skip installation email notification? (y/n) [y]: "
     local skip_email_input=""
-    if read -t "$INPUT_TIMEOUT" skip_email_input 2>/dev/null; then
+    if read -t "$INPUT_TIMEOUT" -p "Skip installation email notification? (y/n) [y]: " skip_email_input; then
         [[ "$skip_email_input" =~ ^[Nn]$ ]] && skip_email="false"
     else
         echo ""
@@ -216,9 +214,8 @@ get_installation_params() {
     echo -e "${CYAN}Locale:${NC} $locale"
     echo ""
     
-    echo -n "Proceed with installation? (y/n) [y]: "
     local confirm=""
-    if read -t "$INPUT_TIMEOUT" confirm 2>/dev/null; then
+    if read -t "$INPUT_TIMEOUT" -p "Proceed with installation? (y/n) [y]: " confirm; then
         [[ "$confirm" =~ ^[Nn]$ ]] && { echo "Installation cancelled."; return 1; }
     else
         echo ""
@@ -334,8 +331,7 @@ main() {
         fi
         
         echo ""
-        echo -n "Press Enter to continue..."
-        read -t "$INPUT_TIMEOUT" 2>/dev/null || true
+        read -t "$INPUT_TIMEOUT" -p "Press Enter to continue..." || true
     done
 }
 
