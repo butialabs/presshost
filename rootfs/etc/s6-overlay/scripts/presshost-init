@@ -89,6 +89,18 @@ if [ -f "/etc/nginx/sites-enabled/presshost.conf.tpl" ]; then
     verbose_log "NGINX site configuration generated"
 fi
 
+# Default index.php for empty installations
+if [ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]; then
+    verbose_log "Empty installation directory detected at ${APP_PATH}"
+    if [ -f "/tmp/index.php" ]; then
+        cp /tmp/index.php "${APP_PATH}/index.php"
+        fast-chown "${APP_PATH}/index.php"
+        verbose_log "Default index.php copied to ${APP_PATH}"
+    else
+        verbose_log "Warning: Default index.php not found at /tmp/index.php"
+    fi
+fi
+
 # WordPress cache symlink
 if [ -d "${APP_PATH}/wp-content" ]; then
     if [ -d "${APP_PATH}/wp-content/cache" ] && [ ! -L "${APP_PATH}/wp-content/cache" ]; then

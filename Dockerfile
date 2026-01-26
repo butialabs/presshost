@@ -170,7 +170,7 @@ COPY rootfs/etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf
 COPY rootfs/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl
 COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
 COPY --chmod=644 --chown=root:root rootfs/etc/cron.d/presshost.tpl /etc/cron.d/presshost.tpl
-COPY /rootfs/site/press/index.php /site/press/index.php
+COPY /rootfs/site/press/index.php /tmp/index.php
 COPY /rootfs/site/press/wp-config.php /tmp/wp-config.php
 
 WORKDIR /site/press

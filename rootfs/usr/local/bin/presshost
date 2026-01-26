@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 source "${SCRIPT_DIR}/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
 
+readonly INPUT_TIMEOUT=120
+
 show_main_menu() {
     clear
     echo ""
@@ -38,26 +40,50 @@ get_input() {
     local default_value="$2"
     local validation_regex="$3"
     
-    while true; do
+    local max_attempts=3
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
         if [[ -n "$default_value" ]]; then
             echo -n "${prompt} [${default_value}]: "
         else
             echo -n "${prompt}: "
         fi
-        read input
-        [[ -z "$input" && -n "$default_value" ]] && input="$default_value"
-        if [[ -n "$validation_regex" ]]; then
-            if [[ "$input" =~ $validation_regex ]]; then
+        
+        local input=""
+        if read -t "$INPUT_TIMEOUT" input 2>/dev/null; then
+            [[ -z "$input" && -n "$default_value" ]] && input="$default_value"
+            if [[ -n "$validation_regex" ]]; then
+                if [[ "$input" =~ $validation_regex ]]; then
+                    echo "$input"
+                    return 0
+                else
+                    echo -e "${RED}Invalid input. Please try again.${NC}"
+                    attempt=$((attempt + 1))
+                fi
+            else
                 echo "$input"
                 return 0
-            else
-                echo -e "${RED}Invalid input. Please try again.${NC}"
             fi
         else
-            echo "$input"
-            return 0
+            echo ""
+            if [[ -n "$default_value" ]]; then
+                info "Input timeout, using default: $default_value"
+                echo "$default_value"
+                return 0
+            else
+                error "Input timeout and no default value available"
+                return 1
+            fi
         fi
     done
+    
+    if [[ -n "$default_value" ]]; then
+        info "Max input attempts reached, using default: $default_value"
+        echo "$default_value"
+        return 0
+    fi
+    return 1
 }
 
 validate_email() {
@@ -73,41 +99,64 @@ get_installation_params() {
     echo "==================================================="
     echo ""
     
+    # Site URL
     local site_url
     site_url=$(get_input "Site URL (e.g., https://example.com)" "" "^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}.*$")
+    if [[ -z "$site_url" ]]; then
+        error "Site URL is required"
+        return 1
+    fi
     
     echo ""
+    
+    # Version selection
+    local version=""
     echo "Select version:"
     echo "1) Latest version"
     echo "2) Specific version"
     echo -n "Please select (1-2) [1]: "
-    read version_choice
     
-    local version=""
-    if [[ "$version_choice" == "2" ]]; then
-        if [[ "$press_type" == "WordPress" ]]; then
-            version=$(get_input "WordPress version (e.g., 6.4.3)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
-        else
-            version=$(get_input "ClassicPress version (e.g., 1.6.2)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
+    local version_choice=""
+    if read -t "$INPUT_TIMEOUT" version_choice 2>/dev/null; then
+        if [[ "$version_choice" == "2" ]]; then
+            if [[ "$press_type" == "WordPress" ]]; then
+                version=$(get_input "WordPress version (e.g., 6.4.3)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
+            else
+                version=$(get_input "ClassicPress version (e.g., 1.6.2)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
+            fi
         fi
+    else
+        echo ""
+        info "Input timeout, using latest version"
     fi
     
+    # Site Title
     local site_title
-    site_title=$(get_input "Site Title" "PressHost Site")
+    site_title=$(get_input "Site Title" "PressHost Site" "")
     
+    # Admin Username
     local admin_user
     admin_user=$(get_input "Admin Username" "admin" "^[a-zA-Z0-9_]{3,20}$")
     
-    local admin_email
-    while true; do
+    # Admin
+    ## Email
+    local admin_email=""
+    local email_attempts=0
+    while [[ $email_attempts -lt 3 ]]; do
         admin_email=$(get_input "Admin Email" "")
-        if validate_email "$admin_email"; then
+        if [[ -n "$admin_email" ]] && validate_email "$admin_email"; then
             break
         else
             echo -e "${RED}Invalid email format. Please try again.${NC}"
+            email_attempts=$((email_attempts + 1))
         fi
     done
+    if [[ -z "$admin_email" ]] || ! validate_email "$admin_email"; then
+        error "Valid admin email is required"
+        return 1
+    fi
     
+    ## Password
     local admin_pass
     local use_generated_pass="false"
     admin_pass=$(get_input "Admin Password (leave empty to generate)" "")
@@ -115,15 +164,23 @@ get_installation_params() {
     if [[ -z "$admin_pass" ]]; then
         admin_pass=$(generate_password 16)
         use_generated_pass="true"
+        debug "Generated admin password"
     fi
     
+    # Locale
     local locale
     locale=$(get_input "Site Locale" "en_US" "^[a-z]{2}_[A-Z]{2}$")
     
-    echo -n "Skip installation email notification? (y/n) [y]: "
-    read skip_email_input
+    # Email notification
     local skip_email="true"
-    [[ "$skip_email_input" =~ ^[Nn]$ ]] && skip_email="false"
+    echo -n "Skip installation email notification? (y/n) [y]: "
+    local skip_email_input=""
+    if read -t "$INPUT_TIMEOUT" skip_email_input 2>/dev/null; then
+        [[ "$skip_email_input" =~ ^[Nn]$ ]] && skip_email="false"
+    else
+        echo ""
+        info "Input timeout, skipping email notification"
+    fi
     
     export INSTALL_URL="$site_url"
     export INSTALL_TITLE="$site_title"
@@ -160,8 +217,13 @@ get_installation_params() {
     echo ""
     
     echo -n "Proceed with installation? (y/n) [y]: "
-    read confirm
-    [[ "$confirm" =~ ^[Nn]$ ]] && { echo "Installation cancelled."; return 1; }
+    local confirm=""
+    if read -t "$INPUT_TIMEOUT" confirm 2>/dev/null; then
+        [[ "$confirm" =~ ^[Nn]$ ]] && { echo "Installation cancelled."; return 1; }
+    else
+        echo ""
+        info "Input timeout, proceeding with installation"
+    fi
     return 0
 }
 
@@ -195,7 +257,7 @@ show_installation_info() {
     fi
     
     echo ""
-    read -p "Press Enter to continue..."
+    read -t "$INPUT_TIMEOUT" -p "Press Enter to continue..." 2>/dev/null || true
 }
 
 install_wordpress() {
@@ -239,7 +301,12 @@ install_classicpress() {
 main() {
     while true; do
         show_main_menu
-        read choice
+        local choice=""
+        if ! read -t "$INPUT_TIMEOUT" choice 2>/dev/null; then
+            echo ""
+            info "Menu timeout, exiting"
+            break
+        fi
         
         if verify_press_installation; then
             case $choice in
@@ -268,7 +335,7 @@ main() {
         
         echo ""
         echo -n "Press Enter to continue..."
-        read
+        read -t "$INPUT_TIMEOUT" 2>/dev/null || true
     done
 }
 
