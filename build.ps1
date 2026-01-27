@@ -1,32 +1,53 @@
-# Usage: .\build.ps1 [-Registry <registry>] [-ImageTag "latest"] [-Platforms "linux/amd64,linux/arm64"] [-NoPush]
-# Example (local build): .\build.ps1 -NoPush
-# Example (push to registry): .\build.ps1 -Registry "docker.io/myuser/presshost" -ImageTag "v1.0"
+# Usage: .\build.ps1 [-Registry <registry>] [-ImageTag "latest"] [-Platforms "linux/amd64,linux/arm64"] [-Push] [-NoRun]
+# local build and run: .\build.ps1
+# local build only: .\build.ps1 -NoRun
+# local build with custom name: .\build.ps1 -Registry "myapp" -ImageTag "dev"
+# push to registry: .\build.ps1 -Registry "docker.io/myuser/presshost" -ImageTag "v1.0" -Push
 
 param(
     [string]$Registry = "presshost",
     [string]$ImageTag = "latest",
-    [string]$Platforms = "linux/amd64,linux/arm64",
-    [switch]$NoPush = $false
+    [string]$Platforms = "",
+    [switch]$Push = $false,
+    [switch]$NoRun = $false
 )
 
+$Run = -not $NoRun
+
 $ImageName = $Registry
-$Push = -not $NoPush
 $BuilderName = "presshost-builder"
 
 $ErrorActionPreference = "Stop"
+
+$IsRemoteRegistry = $Registry -match '[/\.]'
+
+if ([string]::IsNullOrEmpty($Platforms)) {
+    if ($Push -or $IsRemoteRegistry) {
+        $Platforms = "linux/amd64,linux/arm64"
+    } else {
+        $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
+        $Platforms = "linux/$arch"
+    }
+}
+
+if ($IsRemoteRegistry -and -not $PSBoundParameters.ContainsKey('Push')) {
+    $Push = $true
+}
 
 Write-Host "========================================" -ForegroundColor Green
 Write-Host " PressHost Docker Build" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Registry: " -NoNewline
-Write-Host "${Registry}" -ForegroundColor Yellow
 Write-Host "Image: " -NoNewline
 Write-Host "${ImageName}:${ImageTag}" -ForegroundColor Yellow
 Write-Host "Platforms: " -NoNewline
 Write-Host "${Platforms}" -ForegroundColor Yellow
-Write-Host "Push: " -NoNewline
-Write-Host "$Push" -ForegroundColor Yellow
+Write-Host "Mode: " -NoNewline
+if ($Push) {
+    Write-Host "Push to Registry" -ForegroundColor Yellow
+} else {
+    Write-Host "Local Build" -ForegroundColor Yellow
+}
 Write-Host ""
 
 try {
@@ -46,7 +67,6 @@ try {
     exit 1
 }
 
-# Check if buildx builder exists, create if not
 $builderExists = docker buildx inspect $BuilderName 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Creating buildx builder '${BuilderName}'..." -ForegroundColor Green
@@ -57,7 +77,6 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# Use the builder
 docker buildx use $BuilderName
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to use buildx builder" -ForegroundColor Red
@@ -115,8 +134,62 @@ if ($Push) {
         Write-Host "Platforms: " -NoNewline
         Write-Host "${Platforms}" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "Note: Multi-platform images with --load only load the current platform's image." -ForegroundColor Yellow
-        Write-Host "Use without -NoPush to push all platforms to the registry." -ForegroundColor Yellow
+        Write-Host "Note: Image loaded to local Docker daemon." -ForegroundColor Yellow
+        Write-Host "Use -Push to push to a registry, or specify a remote registry." -ForegroundColor Yellow
+        
+        if ($Run) {
+            Write-Host ""
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host " Starting Container..." -ForegroundColor Green
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host ""
+            
+            $ContainerName = "presshost-dev"
+            
+            $existingContainer = docker ps -aq -f name=$ContainerName 2>&1
+            if ($existingContainer) {
+                Write-Host "Stopping existing container '${ContainerName}'..." -ForegroundColor Yellow
+                docker stop $ContainerName 2>&1 | Out-Null
+                docker rm $ContainerName 2>&1 | Out-Null
+            }
+            
+            Write-Host "Starting container '${ContainerName}'..." -ForegroundColor Green
+            docker run -d `
+                --name $ContainerName `
+                -p 8080:80 `
+                -p 8443:443 `
+                -e SITE_URL=localhost `
+                -e DB_HOST=host.docker.internal `
+                -e DB_NAME=presshost `
+                -e DB_USER=presshost `
+                -e DB_PASSWORD=presshost `
+                "${ImageName}:${ImageTag}"
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host ""
+                Write-Host "========================================" -ForegroundColor Green
+                Write-Host " Container Started!" -ForegroundColor Green
+                Write-Host "========================================" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "Container: " -NoNewline
+                Write-Host "${ContainerName}" -ForegroundColor Yellow
+                Write-Host "HTTP: " -NoNewline
+                Write-Host "http://localhost:8080" -ForegroundColor Yellow
+                Write-Host "HTTPS: " -NoNewline
+                Write-Host "https://localhost:8443" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Commands:" -ForegroundColor Green
+                Write-Host "  Logs: docker logs -f ${ContainerName}" -ForegroundColor Yellow
+                Write-Host "  Shell: docker exec -it ${ContainerName} bash" -ForegroundColor Yellow
+                Write-Host "  Stop: docker stop ${ContainerName}" -ForegroundColor Yellow
+            } else {
+                Write-Host ""
+                Write-Host "========================================" -ForegroundColor Red
+                Write-Host " Failed to start container!" -ForegroundColor Red
+                Write-Host "========================================" -ForegroundColor Red
+                exit 1
+            }
+        }
     } else {
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Red
