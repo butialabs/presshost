@@ -17,7 +17,7 @@ input_site_url() {
     calc_dialog_size 10 70
     while true; do
         url=$(whiptail --title "Site URL" --backtitle "$WHIPTAIL_BACKTITLE" \
-            --inputbox "Enter the site URL (e.g., https://example.com):" \
+            --inputbox "Enter the site URL (e.g., https://example.com, http://localhost, http://1.1.1.1:80):" \
             $CALC_HEIGHT $CALC_WIDTH "$default_url" 3>&1 1>&2 2>&3) || return 1
         
         if [[ -z "$url" ]]; then
@@ -26,7 +26,7 @@ input_site_url() {
         fi
         
         if ! validate_url "$url"; then
-            show_whiptail_error "Invalid URL format. Please use format: https://example.com"
+            show_whiptail_error "Invalid URL format. Examples: https://example.com, http://localhost, http://1.1.1.1:80"
             continue
         fi
         
@@ -139,10 +139,13 @@ input_admin_pass() {
     calc_dialog_size 12 60
     
     if whiptail --title "Admin Password" --backtitle "$WHIPTAIL_BACKTITLE" \
-        --yesno "Would you like to auto-generate a secure password?\n\nSelect 'No' to enter your own password." \
+        --yesno "Would you like to auto-generate a password?\n\nSelect 'No' to enter your own password." \
         $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3; then
         local generated_pass
         generated_pass=$(generate_password 16)
+
+        show_whiptail_warning "A admin password was generated:\n\n${generated_pass}\n\nCopy it now. Press OK to continue." "Generated Password"
+
         echo "$generated_pass"
         GENERATED_PASSWORD="$generated_pass"
         return 0
@@ -184,24 +187,27 @@ input_admin_pass() {
 
 input_locale() {
     local default_locale="${1:-en_US}"
-    
-    calc_dialog_size 10 60
-    while true; do
-        local locale
-        locale=$(whiptail --title "Site Locale" --backtitle "$WHIPTAIL_BACKTITLE" \
-            --inputbox "Enter the site locale (e.g., en_US, pt_BR, es_ES):" \
-            $CALC_HEIGHT $CALC_WIDTH "$default_locale" 3>&1 1>&2 2>&3) || return 1
-        
-        [[ -z "$locale" ]] && locale="$default_locale"
-        
-        if ! validate_locale "$locale"; then
-            show_whiptail_error "Invalid locale format. Use format: xx_XX (e.g., en_US)"
-            continue
-        fi
-        
-        echo "$locale"
-        return 0
-    done
+    local options=()
+
+    while IFS=',' read -r code name; do
+        [[ -z "$code" ]] && continue
+        options+=("$code" "$name")
+    done < <(get_all_locales)
+
+    calc_dialog_size 20 50
+    local list_height=$((CALC_HEIGHT - 8))
+    [[ $list_height -lt 10 ]] && list_height=10
+
+    local choice
+    choice=$(whiptail --title "Site Locale" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --menu "Select the site locale:" \
+        $CALC_HEIGHT $CALC_WIDTH $list_height \
+        --default-item "$default_locale" \
+        "${options[@]}" \
+        3>&1 1>&2 2>&3) || return 1
+
+    echo "$choice"
+    return 0
 }
 
 input_skip_email() {

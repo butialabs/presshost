@@ -3,8 +3,8 @@
 if [[ "${COMMON_UTILS_LOADED:-}" == "true" ]]; then
     return 0
 fi
-COMMON_UTILS_LOADED="true"
 
+COMMON_UTILS_LOADED="true"
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -13,6 +13,11 @@ readonly PURPLE='\033[0;35m'
 readonly CYAN='\033[0;36m'
 readonly WHITE='\033[1;37m'
 readonly NC='\033[0m'
+
+readonly PRESSHOST_NEWT_ERROR='root=white,black;window=white,red;border=white,red;title=white,red;textbox=white,red;button=black,white;actbutton=white,red;actsellistbox=white,red;'
+readonly PRESSHOST_NEWT_WARNING='root=white,black;window=black,yellow;border=black,yellow;title=black,yellow;textbox=black,yellow;button=black,white;actbutton=black,yellow;actsellistbox=black,yellow;'
+readonly PRESSHOST_NEWT_INFO='root=white,black;window=white,blue;border=white,blue;title=white,blue;textbox=white,blue;button=black,white;actbutton=white,blue;actsellistbox=white,blue;'
+readonly PRESSHOST_NEWT_SUCCESS='root=white,black;window=black,green;border=black,green;title=black,green;textbox=black,green;button=black,white;actbutton=black,green;actsellistbox=black,green;'
 
 SCRIPT_NAME="${SCRIPT_NAME:-$(basename "${BASH_SOURCE[1]}" .sh | tr '[:lower:]' '[:upper:]')}"
 
@@ -123,14 +128,22 @@ _whiptail_msgbox() {
     local message="$3"
     local height="$4"
     local width="$5"
+    local newt_colors="${6:-}"
 
     local text
     text="$(printf '%b' "$message")"
 
     if command_exists whiptail && _whiptail_has_tty; then
-        if whiptail --title "$title" --backtitle "$backtitle" --msgbox "$text" "$height" "$width" \
-            </dev/tty >/dev/tty; then
+        if [[ -n "$newt_colors" ]]; then
+            if NEWT_COLORS="$newt_colors" whiptail --title "$title" --backtitle "$backtitle" --msgbox "$text" "$height" "$width" \
+                </dev/tty >/dev/tty; then
+                return 0
+            fi
+        else
+            if whiptail --title "$title" --backtitle "$backtitle" --msgbox "$text" "$height" "$width" \
+                </dev/tty >/dev/tty; then
             return 0
+        fi
         fi
 
         printf '%b\n' "${title}: ${text}" >&2
@@ -148,11 +161,37 @@ _whiptail_textbox_file() {
     local height="$4"
     local width="$5"
 
+    local render_file="$file"
+    local tmp_render_file=""
+    local wrap_width=$((width > 8 ? width - 4 : width))
+
+    strip_ansi() {
+        sed -r 's/\x1B\[[0-9;?]*[ -/]*[@-~]//g' | sed -r 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g'
+    }
+
     if command_exists whiptail && _whiptail_has_tty; then
-        if whiptail --title "$title" --backtitle "$backtitle" --textbox "$file" "$height" "$width" \
+        if [[ -r "$file" ]]; then
+            if command_exists mktemp; then
+                tmp_render_file=$(mktemp /tmp/presshost-log.XXXXXX 2>/dev/null || true)
+            fi
+
+            if [[ -n "$tmp_render_file" ]]; then
+                if command_exists fold; then
+                    strip_ansi < "$file" | fold -w "$wrap_width" > "$tmp_render_file" 2>/dev/null || true
+                else
+                    strip_ansi < "$file" > "$tmp_render_file" 2>/dev/null || true
+                fi
+                render_file="$tmp_render_file"
+            fi
+        fi
+
+        if whiptail --title "$title" --backtitle "$backtitle" --scrolltext --textbox "$render_file" "$height" "$width" \
             </dev/tty >/dev/tty; then
+            [[ -n "$tmp_render_file" ]] && rm -f "$tmp_render_file" 2>/dev/null || true
             return 0
         fi
+
+        [[ -n "$tmp_render_file" ]] && rm -f "$tmp_render_file" 2>/dev/null || true
 
         printf '%s\n' "${title}: could not render textbox; showing raw content below" >&2
     fi
@@ -196,7 +235,7 @@ show_whiptail_error() {
     local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
 
     calc_dialog_size 10 60
-    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH"
+    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH" "$PRESSHOST_NEWT_ERROR"
 }
 
 show_whiptail_warning() {
@@ -205,7 +244,7 @@ show_whiptail_warning() {
     local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
 
     calc_dialog_size 10 60
-    _whiptail_msgbox "$title" "$backtitle" "⚠ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH"
+    _whiptail_msgbox "$title" "$backtitle" "⚠ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH" "$PRESSHOST_NEWT_WARNING"
 }
 
 show_whiptail_info() {
@@ -214,7 +253,7 @@ show_whiptail_info() {
     local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
 
     calc_dialog_size 12 60
-    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH"
+    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH" "$PRESSHOST_NEWT_INFO"
 }
 
 show_whiptail_success() {
@@ -223,7 +262,7 @@ show_whiptail_success() {
     local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
 
     calc_dialog_size 12 60
-    _whiptail_msgbox "$title" "$backtitle" "✓ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH"
+    _whiptail_msgbox "$title" "$backtitle" "✓ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH" "$PRESSHOST_NEWT_SUCCESS"
 }
 
 show_whiptail_textbox() {
@@ -231,7 +270,7 @@ show_whiptail_textbox() {
     local title="${2:-Details}"
     local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
 
-    calc_dialog_size 22 78
+    calc_dialog_size 1000 1000
     _whiptail_textbox_file "$title" "$backtitle" "$file" "$CALC_HEIGHT" "$CALC_WIDTH"
 }
 
@@ -280,8 +319,37 @@ validate_email() {
 
 validate_url() {
     local url="$1"
-    local regex="^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}.*$"
-    [[ "$url" =~ $regex ]]
+
+    local structure_regex='^https?://([^/:?#]+)(:([0-9]{1,5}))?([/?#].*)?$'
+    if [[ ! "$url" =~ $structure_regex ]]; then
+        return 1
+    fi
+
+    local host="${BASH_REMATCH[1]}"
+    local port="${BASH_REMATCH[3]:-}"
+
+    if [[ -n "$port" ]]; then
+        [[ "$port" =~ ^[0-9]+$ ]] || return 1
+        (( 10#$port >= 1 && 10#$port <= 65535 )) || return 1
+    fi
+
+    if [[ "$host" == "localhost" ]]; then
+        return 0
+    fi
+
+    if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        local o1 o2 o3 o4
+        IFS='.' read -r o1 o2 o3 o4 <<<"$host"
+        local o
+        for o in "$o1" "$o2" "$o3" "$o4"; do
+            [[ "$o" =~ ^[0-9]+$ ]] || return 1
+            (( 10#$o >= 0 && 10#$o <= 255 )) || return 1
+        done
+        return 0
+    fi
+
+    local domain_regex='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+    [[ "$host" =~ $domain_regex ]]
 }
 
 validate_username() {
@@ -298,14 +366,141 @@ validate_version() {
 
 validate_locale() {
     local locale="$1"
-    local regex="^[a-z]{2}_[A-Z]{2}$"
+    local regex='^[a-z]{2,3}(_[A-Za-z0-9]{2,8}){0,2}$'
     [[ "$locale" =~ $regex ]]
 }
 
-export -f get_terminal_size calc_dialog_size
-export -f show_whiptail_error show_whiptail_warning show_whiptail_info show_whiptail_success
-export -f show_whiptail_textbox
-export -f update_whiptail_progress
+# Returns all locales (code,english_name) - one per line
+get_all_locales() {
+    cat <<'EOF'
+af,Afrikaans
+ar,Arabic
+ary,Moroccan Arabic
+as,Assamese
+az,Azerbaijani
+azb,South Azerbaijani
+bel,Belarusian
+bg_BG,Bulgarian
+bn_BD,Bengali (Bangladesh)
+bn_IN,Bengali (India)
+bo,Tibetan
+bs_BA,Bosnian
+ca,Catalan
+ceb,Cebuano
+ckb,Kurdish (Sorani)
+cs_CZ,Czech
+cy,Welsh
+da_DK,Danish
+de_AT,German (Austria)
+de_CH,German (Switzerland)
+de_CH_informal,German (Switzerland Informal)
+de_DE,German
+de_DE_formal,German (Formal)
+dzo,Dzongkha
+el,Greek
+en_AU,English (Australia)
+en_CA,English (Canada)
+en_GB,English (UK)
+en_NZ,English (New Zealand)
+en_US,English (United States)
+en_ZA,English (South Africa)
+eo,Esperanto
+es_AR,Spanish (Argentina)
+es_CL,Spanish (Chile)
+es_CO,Spanish (Colombia)
+es_CR,Spanish (Costa Rica)
+es_ES,Spanish (Spain)
+es_GT,Spanish (Guatemala)
+es_MX,Spanish (Mexico)
+es_PE,Spanish (Peru)
+es_UY,Spanish (Uruguay)
+es_VE,Spanish (Venezuela)
+et,Estonian
+eu,Basque
+fa_IR,Persian
+fi,Finnish
+fr_BE,French (Belgium)
+fr_CA,French (Canada)
+fr_FR,French (France)
+fur,Friulian
+gd,Scottish Gaelic
+gl_ES,Galician
+gu,Gujarati
+haz,Hazaragi
+he_IL,Hebrew
+hi_IN,Hindi
+hr,Croatian
+hsb,Upper Sorbian
+hu_HU,Hungarian
+hy,Armenian
+id_ID,Indonesian
+is_IS,Icelandic
+it_IT,Italian
+ja,Japanese
+jv_ID,Javanese
+kab,Kabyle
+ka_GE,Georgian
+kk,Kazakh
+km,Khmer
+kn,Kannada
+ko_KR,Korean
+lo,Lao
+lt_LT,Lithuanian
+lv,Latvian
+mk_MK,Macedonian
+ml_IN,Malayalam
+mn,Mongolian
+mr,Marathi
+ms_MY,Malay
+my_MM,Myanmar (Burmese)
+nb_NO,Norwegian (Bokmal)
+ne_NP,Nepali
+nl_BE,Dutch (Belgium)
+nl_NL,Dutch
+nl_NL_formal,Dutch (Formal)
+nn_NO,Norwegian (Nynorsk)
+oci,Occitan
+pa_IN,Punjabi
+pl_PL,Polish
+ps,Pashto
+pt_AO,Portuguese (Angola)
+pt_BR,Portuguese (Brazil)
+pt_PT,Portuguese (Portugal)
+pt_PT_ao90,Portuguese (Portugal AO90)
+rhg,Rohingya
+ro_RO,Romanian
+ru_RU,Russian
+sah,Sakha
+si_LK,Sinhala
+skr,Saraiki
+sk_SK,Slovak
+sl_SI,Slovenian
+snd,Sindhi
+sq,Albanian
+sr_RS,Serbian
+sv_SE,Swedish
+sw,Swahili
+szl,Silesian
+tah,Tahitian
+ta_IN,Tamil
+te,Telugu
+th,Thai
+tl,Tagalog
+tr_TR,Turkish
+tt_RU,Tatar
+ug_CN,Uighur
+uk,Ukrainian
+ur,Urdu
+uz_UZ,Uzbek
+vi,Vietnamese
+zh_CN,Chinese (China)
+zh_HK,Chinese (Hong Kong)
+zh_TW,Chinese (Taiwan)
+EOF
+}
+
+export -f get_all_locales
+export -f get_terminal_size calc_dialog_size show_whiptail_error show_whiptail_warning show_whiptail_info show_whiptail_success show_whiptail_textbox update_whiptail_progress
 export -f validate_email validate_url validate_username validate_version validate_locale
 
 PRESS_WP_DIR="${APP_PATH:-/site/press}"
