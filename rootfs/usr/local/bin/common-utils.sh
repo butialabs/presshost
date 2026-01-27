@@ -105,6 +105,209 @@ require_env_vars() {
 export -f log error warning info debug success critical verbose
 export -f command_exists file_readable dir_writable safe_execute require_env_vars
 
+WHIPTAIL_BACKTITLE="${WHIPTAIL_BACKTITLE:-PressHost}"
+WHIPTAIL_DEFAULT_HEIGHT=20
+WHIPTAIL_DEFAULT_WIDTH=70
+TERM_HEIGHT=24
+TERM_WIDTH=80
+CALC_HEIGHT=20
+CALC_WIDTH=70
+
+_whiptail_has_tty() {
+    [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+_whiptail_msgbox() {
+    local title="$1"
+    local backtitle="$2"
+    local message="$3"
+    local height="$4"
+    local width="$5"
+
+    local text
+    text="$(printf '%b' "$message")"
+
+    if command_exists whiptail && _whiptail_has_tty; then
+        if whiptail --title "$title" --backtitle "$backtitle" --msgbox "$text" "$height" "$width" \
+            </dev/tty >/dev/tty; then
+            return 0
+        fi
+
+        printf '%b\n' "${title}: ${text}" >&2
+        return 0
+    fi
+
+    printf '%b\n' "${title}: ${text}" >&2
+    return 0
+}
+
+_whiptail_textbox_file() {
+    local title="$1"
+    local backtitle="$2"
+    local file="$3"
+    local height="$4"
+    local width="$5"
+
+    if command_exists whiptail && _whiptail_has_tty; then
+        if whiptail --title "$title" --backtitle "$backtitle" --textbox "$file" "$height" "$width" \
+            </dev/tty >/dev/tty; then
+            return 0
+        fi
+
+        printf '%s\n' "${title}: could not render textbox; showing raw content below" >&2
+    fi
+
+    if [[ -r "$file" ]]; then
+        cat "$file" >&2
+    else
+        printf '%s\n' "${title}: file not readable: ${file}" >&2
+    fi
+    return 0
+}
+
+get_terminal_size() {
+    local term_lines term_cols
+    term_lines=$(tput lines 2>/dev/null || echo 24)
+    term_cols=$(tput cols 2>/dev/null || echo 80)
+    
+    TERM_HEIGHT=$((term_lines > 24 ? term_lines : 24))
+    TERM_WIDTH=$((term_cols > 80 ? term_cols : 80))
+}
+
+calc_dialog_size() {
+    local requested_height="${1:-$WHIPTAIL_DEFAULT_HEIGHT}"
+    local requested_width="${2:-$WHIPTAIL_DEFAULT_WIDTH}"
+    
+    get_terminal_size
+    
+    local max_height=$((TERM_HEIGHT - 4))
+    local max_width=$((TERM_WIDTH - 4))
+    
+    CALC_HEIGHT=$((requested_height < max_height ? requested_height : max_height))
+    CALC_WIDTH=$((requested_width < max_width ? requested_width : max_width))
+    
+    [[ $CALC_HEIGHT -lt 8 ]] && CALC_HEIGHT=8
+    [[ $CALC_WIDTH -lt 50 ]] && CALC_WIDTH=50
+}
+
+show_whiptail_error() {
+    local message="$1"
+    local title="${2:-Error}"
+    local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
+
+    calc_dialog_size 10 60
+    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH"
+}
+
+show_whiptail_warning() {
+    local message="$1"
+    local title="${2:-Warning}"
+    local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
+
+    calc_dialog_size 10 60
+    _whiptail_msgbox "$title" "$backtitle" "⚠ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH"
+}
+
+show_whiptail_info() {
+    local message="$1"
+    local title="${2:-Information}"
+    local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
+
+    calc_dialog_size 12 60
+    _whiptail_msgbox "$title" "$backtitle" "$message" "$CALC_HEIGHT" "$CALC_WIDTH"
+}
+
+show_whiptail_success() {
+    local message="$1"
+    local title="${2:-Success}"
+    local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
+
+    calc_dialog_size 12 60
+    _whiptail_msgbox "$title" "$backtitle" "✓ ${message}" "$CALC_HEIGHT" "$CALC_WIDTH"
+}
+
+show_whiptail_textbox() {
+    local file="$1"
+    local title="${2:-Details}"
+    local backtitle="${3:-$WHIPTAIL_BACKTITLE}"
+
+    calc_dialog_size 22 78
+    _whiptail_textbox_file "$title" "$backtitle" "$file" "$CALC_HEIGHT" "$CALC_WIDTH"
+}
+
+update_whiptail_progress() {
+    local percent="$1"
+    local message="$2"
+    local progress_pipe="${3:-${PRESSHOST_PROGRESS_PIPE:-}}"
+    local progress_fd="${PRESSHOST_PROGRESS_FD:-}"
+    local gauge_pid="${PRESSHOST_GAUGE_PID:-}"
+
+    if [[ -n "$gauge_pid" ]] && [[ "$gauge_pid" =~ ^[0-9]+$ ]]; then
+        if ! kill -0 "$gauge_pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    if [[ -n "$progress_fd" ]] && [[ "$progress_fd" =~ ^[0-9]+$ ]]; then
+        local text
+        text="$(printf '%b' "$message")"
+        {
+            printf 'XXX\n'
+            printf '%s\n' "$percent"
+            printf '%s\n' "$text"
+            printf 'XXX\n'
+        } >&${progress_fd} 2>/dev/null || true
+        return 0
+    fi
+    
+    if [[ -n "$progress_pipe" ]] && [[ -p "$progress_pipe" ]]; then
+        local text
+        text="$(printf '%b' "$message")"
+        {
+            printf 'XXX\n'
+            printf '%s\n' "$percent"
+            printf '%s\n' "$text"
+            printf 'XXX\n'
+        } >"$progress_pipe" 2>/dev/null || true
+    fi
+}
+
+validate_email() {
+    local email="$1"
+    local regex="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    [[ "$email" =~ $regex ]]
+}
+
+validate_url() {
+    local url="$1"
+    local regex="^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}.*$"
+    [[ "$url" =~ $regex ]]
+}
+
+validate_username() {
+    local username="$1"
+    local regex="^[a-zA-Z0-9_]{3,20}$"
+    [[ "$username" =~ $regex ]]
+}
+
+validate_version() {
+    local version="$1"
+    local regex="^[0-9]+\.[0-9]+(\.[0-9]+)?$"
+    [[ "$version" =~ $regex ]]
+}
+
+validate_locale() {
+    local locale="$1"
+    local regex="^[a-z]{2}_[A-Z]{2}$"
+    [[ "$locale" =~ $regex ]]
+}
+
+export -f get_terminal_size calc_dialog_size
+export -f show_whiptail_error show_whiptail_warning show_whiptail_info show_whiptail_success
+export -f show_whiptail_textbox
+export -f update_whiptail_progress
+export -f validate_email validate_url validate_username validate_version validate_locale
+
 PRESS_WP_DIR="${APP_PATH:-/site/press}"
 PRESS_UPLOADS_DIR="${UPLOADS_PATH:-/site/uploads}"
 PRESS_CACHE_DIR="${CACHE_PATH:-/site/cache}"

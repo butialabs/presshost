@@ -7,186 +7,531 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 source "${SCRIPT_DIR}/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
 
-readonly INPUT_TIMEOUT=120
+readonly MENU_HEIGHT=10
+WHIPTAIL_BACKTITLE="PressHost"
+
+input_site_url() {
+    local default_url="${1:-}"
+    local url=""
+    
+    calc_dialog_size 10 70
+    while true; do
+        url=$(whiptail --title "Site URL" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --inputbox "Enter the site URL (e.g., https://example.com):" \
+            $CALC_HEIGHT $CALC_WIDTH "$default_url" 3>&1 1>&2 2>&3) || return 1
+        
+        if [[ -z "$url" ]]; then
+            show_whiptail_error "Site URL is required."
+            continue
+        fi
+        
+        if ! validate_url "$url"; then
+            show_whiptail_error "Invalid URL format. Please use format: https://example.com"
+            continue
+        fi
+        
+        echo "$url"
+        return 0
+    done
+}
+
+input_version_select() {
+    local press_type="$1"
+    local version=""
+    
+    calc_dialog_size 12 60
+    local choice
+    choice=$(whiptail --title "${press_type} Version" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --radiolist "Select version to install:" $CALC_HEIGHT $CALC_WIDTH 2 \
+        "latest" "Latest stable version" ON \
+        "specific" "Specific version number" OFF \
+        3>&1 1>&2 2>&3) || return 1
+    
+    if [[ "$choice" == "specific" ]]; then
+        calc_dialog_size 10 60
+        
+        while true; do
+            version=$(whiptail --title "${press_type} Version" --backtitle "$WHIPTAIL_BACKTITLE" \
+                --inputbox "Enter the ${press_type} version (e.g., 6.4.3):" \
+                $CALC_HEIGHT $CALC_WIDTH "" 3>&1 1>&2 2>&3) || return 1
+            
+            if [[ -z "$version" ]]; then
+                echo ""
+                return 0
+            fi
+            
+            if ! validate_version "$version"; then
+                show_whiptail_error "Invalid version format. Please use format: X.Y or X.Y.Z"
+                continue
+            fi
+            
+            echo "$version"
+            return 0
+        done
+    fi
+    
+    echo ""
+    return 0
+}
+
+input_site_title() {
+    local default_title="${1:-PressHost Site}"
+    
+    calc_dialog_size 10 60
+    local title
+    title=$(whiptail --title "Site Title" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --inputbox "Enter the site title:" \
+        $CALC_HEIGHT $CALC_WIDTH "$default_title" 3>&1 1>&2 2>&3) || return 1
+    
+    [[ -z "$title" ]] && title="$default_title"
+    echo "$title"
+    return 0
+}
+
+input_admin_user() {
+    local default_user="${1:-admin}"
+    
+    calc_dialog_size 10 60
+    while true; do
+        local username
+        username=$(whiptail --title "Admin Username" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --inputbox "Enter the admin username (3-20 alphanumeric characters):" \
+            $CALC_HEIGHT $CALC_WIDTH "$default_user" 3>&1 1>&2 2>&3) || return 1
+        
+        [[ -z "$username" ]] && username="$default_user"
+        
+        if ! validate_username "$username"; then
+            show_whiptail_error "Invalid username. Use 3-20 alphanumeric characters or underscores."
+            continue
+        fi
+        
+        echo "$username"
+        return 0
+    done
+}
+
+input_admin_email() {
+    local default_email="${1:-}"
+    
+    calc_dialog_size 10 60
+    while true; do
+        local email
+        email=$(whiptail --title "Admin Email" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --inputbox "Enter the admin email address:" \
+            $CALC_HEIGHT $CALC_WIDTH "$default_email" 3>&1 1>&2 2>&3) || return 1
+        
+        if [[ -z "$email" ]]; then
+            show_whiptail_error "Admin email is required."
+            continue
+        fi
+        
+        if ! validate_email "$email"; then
+            show_whiptail_error "Invalid email format. Please enter a valid email address."
+            continue
+        fi
+        
+        echo "$email"
+        return 0
+    done
+}
+
+input_admin_pass() {
+    calc_dialog_size 12 60
+    
+    if whiptail --title "Admin Password" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --yesno "Would you like to auto-generate a secure password?\n\nSelect 'No' to enter your own password." \
+        $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3; then
+        local generated_pass
+        generated_pass=$(generate_password 16)
+        echo "$generated_pass"
+        GENERATED_PASSWORD="$generated_pass"
+        return 0
+    fi
+    
+    local password=""
+    local password_confirm=""
+    
+    calc_dialog_size 10 60
+    while true; do
+        password=$(whiptail --title "Admin Password" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --passwordbox "Enter the admin password:" \
+            $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3) || return 1
+        
+        if [[ -z "$password" ]]; then
+            show_whiptail_error "Password cannot be empty."
+            continue
+        fi
+        
+        if [[ ${#password} -lt 8 ]]; then
+            show_whiptail_error "Password must be at least 8 characters long."
+            continue
+        fi
+        
+        password_confirm=$(whiptail --title "Confirm Password" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --passwordbox "Confirm the admin password:" \
+            $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3) || return 1
+        
+        if [[ "$password" != "$password_confirm" ]]; then
+            show_whiptail_error "Passwords do not match. Please try again."
+            continue
+        fi
+        
+        GENERATED_PASSWORD=""
+        echo "$password"
+        return 0
+    done
+}
+
+input_locale() {
+    local default_locale="${1:-en_US}"
+    
+    calc_dialog_size 10 60
+    while true; do
+        local locale
+        locale=$(whiptail --title "Site Locale" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --inputbox "Enter the site locale (e.g., en_US, pt_BR, es_ES):" \
+            $CALC_HEIGHT $CALC_WIDTH "$default_locale" 3>&1 1>&2 2>&3) || return 1
+        
+        [[ -z "$locale" ]] && locale="$default_locale"
+        
+        if ! validate_locale "$locale"; then
+            show_whiptail_error "Invalid locale format. Use format: xx_XX (e.g., en_US)"
+            continue
+        fi
+        
+        echo "$locale"
+        return 0
+    done
+}
+
+input_skip_email() {
+    calc_dialog_size 10 60
+    
+    if whiptail --title "Email Notification" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --yesno "Skip sending the installation email notification?\n\nRecommended: Yes (Skip)" \
+        $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3; then
+        echo "true"
+    else
+        echo "false"
+    fi
+    return 0
+}
 
 show_main_menu() {
-    clear
-    echo ""
-    echo "==================================================="
-    echo "PressHost"
-    echo "==================================================="
-    echo ""
+    calc_dialog_size 18 60
     
     if verify_press_installation; then
-        echo -e "${GREEN}✓ ${PRESS_TYPE} ${PRESS_VERSION} is installed${NC}"
-        echo ""
-        echo "1) View current installation info"
-        echo "2) Exit"
-        echo ""
+        local choice
+        choice=$(whiptail --title "PressHost" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --menu "\n✓ ${PRESS_TYPE} ${PRESS_VERSION} is installed\n\nSelect an option:" \
+            $CALC_HEIGHT $CALC_WIDTH 3 \
+            "1" "View installation info" \
+            "2" "Exit" \
+            3>&1 1>&2 2>&3) || return 255
+        
+        echo "$choice"
     else
-        echo -e "${YELLOW}! No WordPress/ClassicPress installation detected${NC}"
-        echo ""
-        echo "1) Install WordPress"
-        echo "2) Install ClassicPress"
-        echo "3) Exit"
-        echo ""
+        local choice
+        choice=$(whiptail --title "PressHost" --backtitle "$WHIPTAIL_BACKTITLE" \
+            --menu "\n⚠ No WordPress/ClassicPress installation detected\n\nSelect an option:" \
+            $CALC_HEIGHT $CALC_WIDTH 4 \
+            "1" "Install WordPress" \
+            "2" "Install ClassicPress" \
+            "3" "Exit" \
+            3>&1 1>&2 2>&3) || return 255
+        
+        echo "$choice"
     fi
 }
 
-get_input() {
-    local prompt="$1"
-    local default_value="$2"
-    local validation_regex="$3"
+show_installation_summary() {
+    local press_type="$1"
+    local site_url="$2"
+    local version="$3"
+    local site_title="$4"
+    local admin_user="$5"
+    local admin_email="$6"
+    local admin_pass="$7"
+    local locale="$8"
+    local generated="${9:-}"
     
-    local max_attempts=3
-    local attempt=0
+    local version_display="${version:-Latest}"
+    local password_display=""
     
-    while [[ $attempt -lt $max_attempts ]]; do
-        local prompt_text=""
-        if [[ -n "$default_value" ]]; then
-            prompt_text="${prompt} [${default_value}]: "
-        else
-            prompt_text="${prompt}: "
-        fi
-        
-        local input=""
-        if read -t "$INPUT_TIMEOUT" -p "$prompt_text" input 2>/dev/null; then
-            [[ -z "$input" && -n "$default_value" ]] && input="$default_value"
-            if [[ -n "$validation_regex" ]]; then
-                if [[ "$input" =~ $validation_regex ]]; then
-                    echo "$input"
-                    return 0
-                else
-                    echo -e "${RED}Invalid input. Please try again.${NC}"
-                    attempt=$((attempt + 1))
-                fi
-            else
-                echo "$input"
-                return 0
-            fi
-        else
-            echo ""
-            if [[ -n "$default_value" ]]; then
-                info "Input timeout, using default: $default_value"
-                echo "$default_value"
-                return 0
-            else
-                error "Input timeout and no default value available"
-                return 1
-            fi
-        fi
-    done
+    if [[ -n "$generated" ]]; then
+        password_display="\nAdmin Password: $admin_pass\n\n⚠ SAVE THIS PASSWORD - It will not be shown again!"
+    else
+        password_display="\nAdmin Password: ********"
+    fi
     
-    if [[ -n "$default_value" ]]; then
-        info "Max input attempts reached, using default: $default_value"
-        echo "$default_value"
+    calc_dialog_size 22 70
+    
+    local summary="Installation Summary
+═══════════════════════════════════════
+
+Press Type: $press_type
+Version: $version_display
+Site URL: $site_url
+Site Title: $site_title
+Admin User: $admin_user
+Admin Email: $admin_email${password_display}
+Locale: $locale
+
+═══════════════════════════════════════"
+
+    whiptail --title "Confirm Installation" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --yesno "$summary\n\nProceed with installation?" \
+        $CALC_HEIGHT $CALC_WIDTH 3>&1 1>&2 2>&3
+}
+
+show_installation_info() {
+    if ! verify_press_installation; then
+        show_whiptail_error "No WordPress/ClassicPress installation found."
+        return 1
+    fi
+    
+    local site_url="unknown"
+    local site_title="unknown"
+    
+    if command -v wp >/dev/null 2>&1; then
+        site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+        site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+    fi
+    
+    calc_dialog_size 18 70
+    
+    local info="Current Installation
+═══════════════════════════════════════
+
+✓ ${PRESS_TYPE} is installed
+
+Type: $PRESS_TYPE
+Version: $PRESS_VERSION
+Site URL: $site_url
+Site Title: $site_title
+
+Directories:
+  Installation: $PRESS_WP_DIR
+  Uploads: $PRESS_UPLOADS_DIR
+  Cache: $PRESS_CACHE_DIR
+
+═══════════════════════════════════════"
+
+    whiptail --title "Installation Info" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --msgbox "$info" $CALC_HEIGHT $CALC_WIDTH
+}
+
+find_extracted_dir() {
+    local temp_dir="$1"
+    local extracted_dir
+
+    extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d \( -name 'classicpress*' -o -name 'ClassicPress*' -o -name 'wordpress' \) 2>/dev/null | head -1)
+
+    if [[ -z "$extracted_dir" ]] || [[ "$extracted_dir" == "$temp_dir" ]]; then
+        extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d ! -name "$(basename "$temp_dir")" 2>/dev/null | head -1)
+    fi
+
+    if [[ -n "$extracted_dir" ]] && [[ "$extracted_dir" != "$temp_dir" ]] && [[ -d "$extracted_dir" ]]; then
+        echo "$extracted_dir"
         return 0
     fi
+
     return 1
 }
 
-validate_email() {
-    [[ "$1" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+make_temp_dir() {
+    local prefix="$1"
+    local temp_dir=""
+
+    if command -v mktemp >/dev/null 2>&1; then
+        temp_dir=$(mktemp -d "/tmp/${prefix}.XXXXXX" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$temp_dir" ]]; then
+        temp_dir="/tmp/${prefix}_$$"
+        rm -rf "$temp_dir" 2>/dev/null || true
+        mkdir -p "$temp_dir"
+    fi
+
+    echo "$temp_dir"
+}
+
+get_press_download_url() {
+    local type="$1" # wordpress|classicpress
+
+    case "$type" in
+        wordpress)
+            if [[ -n "${INSTALL_WORDPRESS_VERSION:-}" ]]; then
+                echo "https://wordpress.org/wordpress-${INSTALL_WORDPRESS_VERSION}.zip"
+            else
+                echo "https://wordpress.org/latest.zip"
+            fi
+            ;;
+        classicpress)
+            if [[ -n "${INSTALL_CLASSICPRESS_VERSION:-}" ]]; then
+                echo "https://github.com/ClassicPress/ClassicPress-release/archive/refs/tags/${INSTALL_CLASSICPRESS_VERSION}.zip"
+            else
+                echo "https://www.classicpress.net/latest.zip"
+            fi
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+get_press_version_info() {
+    local type="$1" # wordpress|classicpress
+
+    case "$type" in
+        wordpress)
+            if [[ -n "${INSTALL_WORDPRESS_VERSION:-}" ]]; then
+                echo "WordPress ${INSTALL_WORDPRESS_VERSION}"
+            else
+                echo "WordPress (latest)"
+            fi
+            ;;
+        classicpress)
+            if [[ -n "${INSTALL_CLASSICPRESS_VERSION:-}" ]]; then
+                echo "ClassicPress ${INSTALL_CLASSICPRESS_VERSION}"
+            else
+                echo "ClassicPress (latest)"
+            fi
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+install_press() {
+    local type="$1" # wordpress|classicpress
+    local press_name=""
+    local temp_dir=""
+    local download_url=""
+    local version_info=""
+    local archive_file=""
+    local source_dir=""
+
+    case "$type" in
+        wordpress) press_name="WordPress" ;;
+        classicpress) press_name="ClassicPress" ;;
+        *)
+            error "Unknown press type: $type"
+            return 2
+            ;;
+    esac
+
+    download_url=$(get_press_download_url "$type") || return 2
+    version_info=$(get_press_version_info "$type") || return 2
+
+    update_whiptail_progress 5 "Preparing installation environment..."
+
+    temp_dir=$(make_temp_dir "$type")
+    archive_file="$temp_dir/${type}.zip"
+
+    trap 'cleanup_temp_dir "$temp_dir" >/dev/null 2>&1 || true' RETURN
+
+    update_whiptail_progress 10 "Downloading ${version_info}..."
+    if ! download_press_archive "$download_url" "$archive_file" "$press_name"; then
+        error "Failed to download ${press_name}"
+        return 1
+    fi
+
+    update_whiptail_progress 30 "Extracting ${press_name} files..."
+    if ! extract_press_archive "$archive_file" "$temp_dir" "$press_name"; then
+        error "Failed to extract ${press_name} archive"
+        return 1
+    fi
+
+    if [[ "$type" == "classicpress" ]]; then
+        update_whiptail_progress 40 "Organizing extracted files..."
+        local extracted_dir
+        if ! extracted_dir=$(find_extracted_dir "$temp_dir"); then
+            error "Could not find extracted ClassicPress directory"
+            return 1
+        fi
+
+        if [[ "$extracted_dir" != "$temp_dir/classicpress" ]]; then
+            mv "$extracted_dir" "$temp_dir/classicpress"
+        fi
+        source_dir="$temp_dir/classicpress"
+    else
+        source_dir="$temp_dir/wordpress"
+    fi
+
+    update_whiptail_progress 50 "Installing ${press_name} files..."
+    if ! install_press_files "$source_dir" "$press_name"; then
+        error "Failed to install ${press_name} files"
+        return 1
+    fi
+
+    update_whiptail_progress 55 "Setting up wp-content structure..."
+    setup_press_content
+
+    if ! verify_press_installation; then
+        error "${press_name} installation failed verification (missing core files)"
+        return 1
+    fi
+
+    update_whiptail_progress 60 "Configuring wp-config.php..."
+    if ! create_press_config "$press_name"; then
+        warning "wp-config.php creation skipped or failed"
+    fi
+
+    update_whiptail_progress 70 "Generating security keys..."
+    if ! generate_press_secrets "$press_name"; then
+        warning "Security keys generation skipped"
+    fi
+
+    update_whiptail_progress 80 "Running WP-CLI installation..."
+    local wp_installed="false"
+    if run_press_install "$press_name"; then
+        wp_installed="true"
+    else
+        warning "WP-CLI installation step completed with warnings"
+    fi
+
+    update_whiptail_progress 90 "Setting final permissions..."
+    set_press_permissions
+
+    update_whiptail_progress 100 "${press_name} installation complete!"
+
+    [[ "$wp_installed" == "true" ]]
 }
 
 get_installation_params() {
     local press_type="$1"
     
-    echo ""
-    echo "==================================================="
-    echo "${press_type} Installation"
-    echo "==================================================="
-    echo ""
+    GENERATED_PASSWORD=""
     
-    # Site URL
-    local site_url
-    site_url=$(get_input "Site URL (e.g., https://example.com)" "" "^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}.*$")
-    if [[ -z "$site_url" ]]; then
-        error "Site URL is required"
-        return 1
-    fi
+    # Step 1: Site URL
+    local default_url="${INSTALL_URL:-${WP_HOME:-${WP_SITEURL:-}}}"
+    INSTALL_URL=$(input_site_url "$default_url") || return 1
     
-    echo ""
+    # Step 2: Version
+    local version
+    version=$(input_version_select "$press_type") || return 1
     
-    # Version selection
-    local version=""
-    echo "Select version:"
-    echo "1) Latest version"
-    echo "2) Specific version"
+    # Step 3: Site Title
+    INSTALL_TITLE=$(input_site_title "${INSTALL_TITLE:-PressHost Site}") || return 1
     
-    local version_choice=""
-    if read -t "$INPUT_TIMEOUT" -p "Please select (1-2) [1]: " version_choice; then
-        if [[ "$version_choice" == "2" ]]; then
-            if [[ "$press_type" == "WordPress" ]]; then
-                version=$(get_input "WordPress version (e.g., 6.4.3)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
-            else
-                version=$(get_input "ClassicPress version (e.g., 1.6.2)" "" "^[0-9]+\.[0-9]+(\.[0-9]+)?$")
-            fi
-        fi
-    else
-        echo ""
-        info "Input timeout, using latest version"
-    fi
+    # Step 4: Admin Username
+    INSTALL_USER=$(input_admin_user "${INSTALL_USER:-admin}") || return 1
     
-    # Site Title
-    local site_title
-    site_title=$(get_input "Site Title" "PressHost Site" "")
+    # Step 5: Admin Email
+    INSTALL_EMAIL=$(input_admin_email "${INSTALL_EMAIL:-}") || return 1
     
-    # Admin Username
-    local admin_user
-    admin_user=$(get_input "Admin Username" "admin" "^[a-zA-Z0-9_]{3,20}$")
+    # Step 6: Admin Password
+    INSTALL_PASS=$(input_admin_pass) || return 1
     
-    # Admin
-    ## Email
-    local admin_email=""
-    local email_attempts=0
-    while [[ $email_attempts -lt 3 ]]; do
-        admin_email=$(get_input "Admin Email" "")
-        if [[ -n "$admin_email" ]] && validate_email "$admin_email"; then
-            break
-        else
-            echo -e "${RED}Invalid email format. Please try again.${NC}"
-            email_attempts=$((email_attempts + 1))
-        fi
-    done
-    if [[ -z "$admin_email" ]] || ! validate_email "$admin_email"; then
-        error "Valid admin email is required"
-        return 1
-    fi
+    # Step 7: Locale
+    INSTALL_LOCALE=$(input_locale "${INSTALL_LOCALE:-en_US}") || return 1
     
-    ## Password
-    local admin_pass
-    local use_generated_pass="false"
-    admin_pass=$(get_input "Admin Password (leave empty to generate)" "")
+    # Step 8: Skip Email
+    INSTALL_SKIP_EMAIL=$(input_skip_email) || return 1
     
-    if [[ -z "$admin_pass" ]]; then
-        admin_pass=$(generate_password 16)
-        use_generated_pass="true"
-        debug "Generated admin password"
-    fi
-    
-    # Locale
-    local locale
-    locale=$(get_input "Site Locale" "en_US" "^[a-z]{2}_[A-Z]{2}$")
-    
-    # Email notification
-    local skip_email="true"
-    local skip_email_input=""
-    if read -t "$INPUT_TIMEOUT" -p "Skip installation email notification? (y/n) [y]: " skip_email_input; then
-        [[ "$skip_email_input" =~ ^[Nn]$ ]] && skip_email="false"
-    else
-        echo ""
-        info "Input timeout, skipping email notification"
-    fi
-    
-    export INSTALL_URL="$site_url"
-    export INSTALL_TITLE="$site_title"
-    export INSTALL_USER="$admin_user"
-    export INSTALL_PASS="$admin_pass"
-    export INSTALL_EMAIL="$admin_email"
-    export INSTALL_SKIP_EMAIL="$skip_email"
-    export INSTALL_LOCALE="$locale"
-    
+    # Set version export
     if [[ -n "$version" ]]; then
         if [[ "$press_type" == "WordPress" ]]; then
             export INSTALL_WORDPRESS_VERSION="$version"
@@ -195,151 +540,171 @@ get_installation_params() {
         fi
     fi
     
-    echo ""
-    echo "==================================================="
-    echo "Summary"
-    echo "==================================================="
-    echo ""
-    echo -e "${CYAN}Press:${NC} $press_type"
-    [[ -n "$version" ]] && echo -e "${CYAN}Version:${NC} $version" || echo -e "${CYAN}Version:${NC} Latest"
-    echo -e "${CYAN}URL:${NC} $site_url"
-    echo -e "${CYAN}Title:${NC} $site_title"
-    echo -e "${CYAN}Admin User:${NC} $admin_user"
-    echo -e "${CYAN}Admin Email:${NC} $admin_email"
-    if [[ "$use_generated_pass" == "true" ]]; then
-        echo -e "${CYAN}Admin Password:${NC} $admin_pass"
-        echo -e "${YELLOW}⚠ Save this password - it will not be shown again!${NC}"
+    # Step 9: Show Summary
+    if ! show_installation_summary "$press_type" "$INSTALL_URL" "$version" \
+        "$INSTALL_TITLE" "$INSTALL_USER" "$INSTALL_EMAIL" "$INSTALL_PASS" \
+        "$INSTALL_LOCALE" "$GENERATED_PASSWORD"; then
+        return 1
     fi
-    echo -e "${CYAN}Locale:${NC} $locale"
-    echo ""
     
-    local confirm=""
-    if read -t "$INPUT_TIMEOUT" -p "Proceed with installation? (y/n) [y]: " confirm; then
-        [[ "$confirm" =~ ^[Nn]$ ]] && { echo "Installation cancelled."; return 1; }
-    else
-        echo ""
-        info "Input timeout, proceeding with installation"
-    fi
+    export INSTALL_URL
+    export INSTALL_TITLE
+    export INSTALL_USER
+    export INSTALL_PASS
+    export INSTALL_EMAIL
+    export INSTALL_SKIP_EMAIL
+    export INSTALL_LOCALE
+    
     return 0
 }
 
-show_installation_info() {
-    echo ""
-    echo "==================================================="
-    echo "Information"
-    echo "==================================================="
-    echo ""
+run_installation_with_progress() {
+    local press_type="$1"
+    local install_target="$2" # wordpress|classicpress
     
-    if verify_press_installation; then
-        echo -e "${GREEN}✓ ${PRESS_TYPE} is installed${NC}"
-        echo ""
-        echo -e "${CYAN}Type:${NC} $PRESS_TYPE"
-        echo -e "${CYAN}Version:${NC} $PRESS_VERSION"
-        
-        if command -v wp >/dev/null 2>&1; then
-            local site_url
-            site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
-            echo -e "${CYAN}Site URL:${NC} $site_url"
-            local site_title
-            site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
-            echo -e "${CYAN}Site Title:${NC} $site_title"
-        fi
-        
-        echo -e "${CYAN}Installation Directory:${NC} $PRESS_WP_DIR"
-        echo -e "${CYAN}Uploads Directory:${NC} $PRESS_UPLOADS_DIR"
-        echo -e "${CYAN}Cache Directory:${NC} $PRESS_CACHE_DIR"
-    else
-        echo -e "${RED}✗ No WordPress/ClassicPress installation found${NC}"
+    local PROGRESS_PIPE="/tmp/presshost_progress_$$_${RANDOM}"
+    mkfifo "$PROGRESS_PIPE"
+    
+    calc_dialog_size 8 60
+    whiptail --title "Installing ${press_type}" --backtitle "$WHIPTAIL_BACKTITLE" \
+        --gauge "Starting installation..." $CALC_HEIGHT $CALC_WIDTH 0 < "$PROGRESS_PIPE" &
+    local GAUGE_PID=$!
+
+    export PRESSHOST_GAUGE_PID=$GAUGE_PID
+    export PRESSHOST_PROGRESS_PIPE="$PROGRESS_PIPE"
+
+    exec 3>"$PROGRESS_PIPE"
+    export PRESSHOST_PROGRESS_FD=3
+    
+    local install_success=false
+
+    local log_dir="${PRESS_LOGS_DIR:-/tmp}"
+    mkdir -p "$log_dir" 2>/dev/null || log_dir="/tmp"
+    local log_file="$log_dir/presshost-install-$(date +%Y%m%d-%H%M%S).log"
+
+    if install_press "$install_target" >"$log_file" 2>&1; then
+        install_success=true
     fi
     
-    echo ""
-    read -t "$INPUT_TIMEOUT" -p "Press Enter to continue..." 2>/dev/null || true
+    {
+        printf 'XXX\n'
+        printf '100\n'
+        printf 'Finalizing...\n'
+        printf 'XXX\n'
+    } >&3 2>/dev/null || true
+
+    exec 3>&-
+    unset PRESSHOST_PROGRESS_FD
+    unset PRESSHOST_GAUGE_PID
+
+    wait $GAUGE_PID 2>/dev/null || true
+    rm -f "$PROGRESS_PIPE"
+    unset PRESSHOST_PROGRESS_PIPE
+
+    if [[ "$install_success" == "true" ]]; then
+        return 0
+    fi
+
+    show_whiptail_error "${press_type} installation failed.\n\nA detailed log will be shown next." "Installation Failed"
+    show_whiptail_textbox "$log_file" "Installation Log" "$WHIPTAIL_BACKTITLE"
+    return 1
 }
 
 install_wordpress() {
     if verify_press_installation; then
-        echo -e "${YELLOW}${PRESS_TYPE} is already installed.${NC}"
-        echo "Installation cancelled."
+        show_whiptail_error "${PRESS_TYPE} is already installed.\nInstallation cancelled."
         return 1
     fi
     
-    get_installation_params "WordPress" || return 1
-    info "Starting WordPress installation..."
+    if ! get_installation_params "WordPress"; then
+        show_whiptail_info "Installation cancelled."
+        return 1
+    fi
     
-    if "${SCRIPT_DIR}/install-wordpress.sh"; then
-        success "WordPress installation completed successfully!"
+    if run_installation_with_progress "WordPress" "wordpress"; then
+        local success_msg="WordPress installation completed successfully!\n\nURL: $INSTALL_URL\nAdmin: ${INSTALL_URL%/}/wp-admin/\nUsername: $INSTALL_USER"
+        if [[ -n "$GENERATED_PASSWORD" ]]; then
+            success_msg="$success_msg\nPassword: $GENERATED_PASSWORD\n\n⚠ SAVE THIS PASSWORD NOW!"
+        fi
+        show_whiptail_success "$success_msg" "Installation Complete"
         return 0
     else
-        error "WordPress installation failed!"
+        show_whiptail_error "WordPress installation failed." "Installation Failed"
         return 1
     fi
 }
 
 install_classicpress() {
     if verify_press_installation; then
-        echo -e "${YELLOW}${PRESS_TYPE} is already installed.${NC}"
-        echo "Installation cancelled."
+        show_whiptail_error "${PRESS_TYPE} is already installed.\nInstallation cancelled."
         return 1
     fi
     
-    get_installation_params "ClassicPress" || return 1
-    info "Starting ClassicPress installation..."
+    if ! get_installation_params "ClassicPress"; then
+        show_whiptail_info "Installation cancelled."
+        return 1
+    fi
     
-    if "${SCRIPT_DIR}/install-classicpress.sh"; then
-        success "ClassicPress installation completed successfully!"
+    if run_installation_with_progress "ClassicPress" "classicpress"; then
+        local success_msg="ClassicPress installation completed successfully!\n\nURL: $INSTALL_URL\nAdmin: ${INSTALL_URL%/}/wp-admin/\nUsername: $INSTALL_USER"
+        if [[ -n "$GENERATED_PASSWORD" ]]; then
+            success_msg="$success_msg\nPassword: $GENERATED_PASSWORD\n\n⚠ SAVE THIS PASSWORD NOW!"
+        fi
+        show_whiptail_success "$success_msg" "Installation Complete"
         return 0
     else
-        error "ClassicPress installation failed!"
+        show_whiptail_error "ClassicPress installation failed." "Installation Failed"
         return 1
     fi
 }
 
-main() {
+main_menu() {
+    if ! verify_press_installation; then
+        case "${PRESSHOST_DEFAULT_ACTION:-}" in
+            wordpress)
+                unset PRESSHOST_DEFAULT_ACTION
+                install_wordpress
+                return $?
+                ;;
+            classicpress)
+                unset PRESSHOST_DEFAULT_ACTION
+                install_classicpress
+                return $?
+                ;;
+        esac
+    fi
+
     while true; do
-        show_main_menu
-        local choice=""
-        local menu_prompt=""
-        
-        if verify_press_installation; then
-            menu_prompt="Please select an option (1-2): "
-        else
-            menu_prompt="Please select an option (1-3): "
-        fi
-        
-        if ! read -t "$INPUT_TIMEOUT" -p "$menu_prompt" choice 2>/dev/null; then
-            echo ""
-            info "Menu timeout, exiting"
+        local choice
+        choice=$(show_main_menu)
+        local exit_code=$?
+
+        if [[ $exit_code -eq 255 ]] || [[ $exit_code -eq 1 ]]; then
             break
         fi
-        
+
         if verify_press_installation; then
-            case $choice in
+            case "$choice" in
                 1) show_installation_info ;;
-                2)
-                    break
-                    ;;
-                *)
-                    echo -e "${RED}Invalid option. Please try again.${NC}"
-                    sleep 2
-                    ;;
+                2) break ;;
+                *) ;;
             esac
         else
-            case $choice in
+            case "$choice" in
                 1) install_wordpress ;;
                 2) install_classicpress ;;
-                3)
-                    break
-                    ;;
-                *)
-                    echo -e "${RED}Invalid option. Please try again.${NC}"
-                    sleep 2
-                    ;;
+                3) break ;;
+                *) ;;
             esac
         fi
-        
-        echo ""
-        read -t "$INPUT_TIMEOUT" -p "Press Enter to continue..." || true
     done
+
+    clear
+    echo "Thank you for using PressHost!"
+}
+
+main() {
+    main_menu
 }
 
 main "$@"
