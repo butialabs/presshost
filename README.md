@@ -10,7 +10,7 @@
 
 ## Features
 
-<video src="https://raw.githubusercontent.com/butialabs/presshost/refs/heads/main/sample.mp4" controls width="100%"></video>
+![PressHost Sample](https://raw.githubusercontent.com/butialabs/presshost/refs/heads/main/sample.mp4)
 
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🔐 Rootless by default
