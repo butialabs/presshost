@@ -1,9 +1,9 @@
-# Usage: .\build.ps1 -Registry <registry> [-ImageTag "latest"] [-Platforms "linux/amd64,linux/arm64"] [-NoPush]
-# Example: .\build.ps1 -Registry "docker.io/myuser/presshost" -ImageTag "v1.0"
+# Usage: .\build.ps1 [-Registry <registry>] [-ImageTag "latest"] [-Platforms "linux/amd64,linux/arm64"] [-NoPush]
+# Example (local build): .\build.ps1 -NoPush
+# Example (push to registry): .\build.ps1 -Registry "docker.io/myuser/presshost" -ImageTag "v1.0"
 
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$Registry,
+    [string]$Registry = "presshost",
     [string]$ImageTag = "latest",
     [string]$Platforms = "linux/amd64,linux/arm64",
     [switch]$NoPush = $false

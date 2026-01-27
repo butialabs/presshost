@@ -1,10 +1,11 @@
 #!/bin/bash
-# Usage: ./build.sh REGISTRY=<registry> [IMAGE_TAG=latest] [PLATFORMS=linux/amd64,linux/arm64] [PUSH=true]
-# Example: ./build.sh REGISTRY=docker.io/myuser/presshost IMAGE_TAG=v1.0
+# Usage: ./build.sh [REGISTRY=<registry>] [IMAGE_TAG=latest] [PLATFORMS=linux/amd64,linux/arm64] [PUSH=true]
+# Example (local build): PUSH=false ./build.sh
+# Example (push to registry): REGISTRY=docker.io/myuser/presshost IMAGE_TAG=v1.0 ./build.sh
 
 set -e
 
-REGISTRY="${REGISTRY:-}"
+REGISTRY="${REGISTRY:-presshost}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 PUSH="${PUSH:-true}"
@@ -14,17 +15,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
-
-if [ -z "${REGISTRY}" ]; then
-    echo -e "${RED}ERROR: REGISTRY is required${NC}"
-    echo ""
-    echo "Usage: ./build.sh REGISTRY=<registry> [IMAGE_TAG=latest] [PLATFORMS=linux/amd64,linux/arm64] [PUSH=true]"
-    echo ""
-    echo "Example:"
-    echo "  REGISTRY=docker.io/myuser/presshost ./build.sh"
-    echo "  REGISTRY=myregistry.com/presshost IMAGE_TAG=v1.0 ./build.sh"
-    exit 1
-fi
 
 IMAGE_NAME="${REGISTRY}"
 
