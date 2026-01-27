@@ -10,7 +10,7 @@
 
 ## Features
 
-[![PressHost Sample](https://raw.githubusercontent.com/butialabs/presshost/main/sample.png)](https://raw.githubusercontent.com/butialabs/presshost/main/sample.mp4)
+https://github.com/user-attachments/assets/92308dad-0dd8-4b38-9f5e-f22cc136fb31
 
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🔐 Rootless by default
