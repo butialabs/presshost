@@ -10,6 +10,8 @@
 
 ## Features
 
+<video src="https://raw.githubusercontent.com/butialabs/presshost/refs/heads/main/sample.mp4" controls width="100%"></video>
+
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🔐 Rootless by default
 - 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
