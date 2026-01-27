@@ -107,6 +107,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     htop \
     procps \
     nano \
+    whiptail \
     gettext-base \
     php${PHP_VERSION}-fpm \
     php${PHP_VERSION}-cli \
