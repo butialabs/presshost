@@ -1,118 +1,42 @@
 #!/bin/bash
 set -e
 
+# Set default PHP_VERSION if not defined
+PHP_VERSION=${PHP_VERSION:-8.4}
+
+# Enhanced logging functions
+log_info() {
+    echo "[INFO] $(date -Iseconds) - $@"
+}
+
+log_warn() {
+    echo "[WARN] $(date -Iseconds) - $@" >&2
+}
+
+log_error() {
+    echo "[ERROR] $(date -Iseconds) - $@" >&2
+}
+
 verbose_log() {
-    [ "${VERBOSE}" = "true" ] && echo "$@" || true
+    [ "${VERBOSE}" = "true" ] && log_info "$@" || true
 }
 
-autoenv_tpl() {
-    local template="$1"
-    local output="$2"
-    
-    if [ ! -f "$template" ]; then
-        return 1
-    fi
-    
-    local vars
-    vars=$(grep -oE '\$\{?[A-Z_][A-Z0-9_]*\}?' "$template" 2>/dev/null | \
-           sed 's/[${}]//g' | sort -u | \
-           while read -r var; do
-               if [ -n "${!var+x}" ]; then
-                   echo -n "\$$var "
-               fi
-           done)
-    
-    if [ -n "$vars" ]; then
-        envsubst "$vars" < "$template" > "$output"
-    else
-        cp "$template" "$output"
-    fi
-}
-
-verbose_log "Starting PressHost initialization..."
-
-# Timezone setup
-if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
-    ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
-    echo "$TZ" > /etc/timezone
-fi
+log_info "Starting PressHost initialization..."
 
 # Runtime directories
-verbose_log "Setting up runtime directories..."
-mkdir -p /run/nginx /run/php "${CACHE_PATH}"
-
-# Clean up any existing NGINX cache
-verbose_log "Cleaning up any existing NGINX cache directories..."
-rm -rf "${CACHE_PATH}/nginx"
-
-# Create cache directories if caching is enabled
-if [ "${NGINX_CACHE}" = "true" ]; then
-    verbose_log "NGINX cache enabled, creating cache directories..."
-    mkdir -p "${CACHE_PATH}/nginx/fastcgi"
-    fast-chown /run/php /run/nginx "${CACHE_PATH}/nginx"
-else
-    verbose_log "NGINX cache disabled, no cache directories will be created."
-fi
-
-# Logrotate configuration
-if [ -f "/etc/logrotate.d/presshost.tpl" ]; then
-    autoenv_tpl /etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost
-    verbose_log "Log rotation configured"
-fi
-
-# PHP environment variables configuration
-if [ "${ALLOW_RUNTIME_PHP_ENVVARS}" = "true" ]; then
-    export PHP_CLEAR_ENV="no"
-else
-    export PHP_CLEAR_ENV="yes"
-fi
-
-# PHP-FPM pool configuration
-if [ -f "/etc/php/8.4/fpm/pool.d/www.conf.tpl" ]; then
-    autoenv_tpl /etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf
-    verbose_log "PHP-FPM pool configuration generated"
-fi
-
-# PHP ini configuration
-if [ -f "/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl" ]; then
-    autoenv_tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini
-    cp /etc/php/8.4/fpm/conf.d/99-presshost.ini /etc/php/8.4/cli/conf.d/99-presshost.ini
-    verbose_log "PHP ini configuration generated"
-fi
-
-# NGINX configuration
-if [ -f "/etc/nginx/nginx.conf.tpl" ]; then
-    autoenv_tpl /etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf
-    verbose_log "NGINX configuration generated"
-fi
-
-# NGINX cache configuration
-autoenv_tpl /etc/nginx/conf.d/cache-path.conf.tpl /etc/nginx/conf.d/cache_path.conf
-
-if [ "${NGINX_CACHE}" = "false" ]; then
-    echo "# Cache - Disabled" > /etc/nginx/cache_php_fastcgi.conf
-    echo "# Cache - Disabled" > /etc/nginx/cache_server.conf
-    echo "# Cache - Disabled" > /etc/nginx/cache_path.conf
-    verbose_log "NGINX FastCGI cache disabled"
-else
-    verbose_log "NGINX FastCGI cache enabled"
-fi
-
-# NGINX site configuration
-if [ -f "/etc/nginx/sites-enabled/presshost.conf.tpl" ]; then
-    autoenv_tpl /etc/nginx/sites-enabled/presshost.conf.tpl /etc/nginx/sites-enabled/presshost.conf
-    verbose_log "NGINX site configuration generated"
-fi
+log_info "Setting up runtime directories..."
+mkdir -p /run/nginx /run/php
+fast-chown /run/php /run/nginx
 
 # Default index.php for empty installations
 if [ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]; then
-    verbose_log "Empty installation directory detected at ${APP_PATH}"
+    log_info "Empty installation directory detected at ${APP_PATH}"
     if [ -f "/tmp/index.php" ]; then
         cp /tmp/index.php "${APP_PATH}/index.php"
         fast-chown "${APP_PATH}/index.php"
-        verbose_log "Default index.php copied to ${APP_PATH}"
+        log_info "Default index.php copied to ${APP_PATH}"
     else
-        verbose_log "Warning: Default index.php not found at /tmp/index.php"
+        log_warn "Warning: Default index.php not found at /tmp/index.php"
     fi
 fi
 
@@ -130,7 +54,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     fi
 
     ln -sf "${CACHE_PATH}/press" "${APP_PATH}/wp-content/cache"
-    verbose_log "Cache symlink created"
+    log_info "Cache symlink created"
 fi
 
 # WordPress uploads symlink
@@ -148,24 +72,10 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     fi
 
     ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
-    verbose_log "Uploads symlink created"
+    log_info "Uploads symlink created"
 fi
-
-# Cron configuration
-if [ -f "/etc/cron.d/presshost.tpl" ]; then
-    envsubst '$APP_PATH $LOGS_PATH' < /etc/cron.d/presshost.tpl > /etc/cron.d/presshost
-    chmod 644 /etc/cron.d/presshost
-    chown root:root /etc/cron.d/presshost
-    verbose_log "PressHost cron configured"
-fi
-
-# Cleanup template files
-find /etc -name "*.tpl" -type f -delete 2>/dev/null || true
 
 # Fix ownership
 fast-chown "${APP_PATH}"
 
-# Reload NGINX
-nginx -s reload
-
-verbose_log "PressHost initialization complete!"
+log_info "PressHost initialization complete!"

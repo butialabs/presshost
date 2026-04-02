@@ -34,7 +34,7 @@ server {
     include conf.d/cache-purge.conf;
 
     location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php${PHP_VERSION}-fpm.sock;
         include conf.d/fastcgi.conf;
         include conf.d/cache-fastcgi.conf;
     }

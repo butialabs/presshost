@@ -2,7 +2,7 @@
 user = ${APP_USER}
 group = ${APP_GROUP}
 
-listen = /run/php/php-fpm.sock
+listen = /run/php/php${PHP_VERSION}-fpm.sock
 listen.owner = ${APP_USER}
 listen.group = ${APP_GROUP}
 listen.mode = 0660

@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+# Check if PHP-FPM is running
+if ! pgrep -x "php-fpm${PHP_VERSION}" > /dev/null; then
+    echo "[ERROR] $(date -Iseconds) - PHP-FPM is not running"
+    exit 1
+fi
+
+# Check if PHP-FPM socket exists
+if [ ! -S "/run/php/php${PHP_VERSION}-fpm.sock" ]; then
+    echo "[ERROR] $(date -Iseconds) - PHP-FPM socket does not exist"
+    exit 1
+fi
+
+# Check if PHP-FPM is responding
+if command -v cgi-fcgi > /dev/null; then
+    if ! SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect /run/php/php${PHP_VERSION}-fpm.sock | grep -q "pong"; then
+        echo "[ERROR] $(date -Iseconds) - PHP-FPM is not responding"
+        exit 1
+    fi
+fi
+
+echo "[INFO] $(date -Iseconds) - PHP-FPM is healthy"
+exit 0

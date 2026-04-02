@@ -126,7 +126,7 @@ http {
         ~*1 1;
     }
 
-    include /etc/nginx/conf.d/cache_path.conf;
+    include /etc/nginx/conf.d/cache-path.conf;
 
     include /etc/nginx/sites-enabled/*;
 }
