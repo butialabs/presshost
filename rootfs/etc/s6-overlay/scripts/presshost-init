@@ -151,4 +151,11 @@ find /etc -name "*.tpl" -type f -delete 2>/dev/null || true
 # Fix ownership
 fast-chown "${APP_PATH}"
 
+# Reload NGINX if needed
+if [ -f "/run/nginx.pid" ]; then
+    verbose_log "Reloading NGINX configuration..."
+    nginx -s reload
+    verbose_log "NGINX configuration reloaded"
+fi
+
 verbose_log "PressHost initialization complete!"
