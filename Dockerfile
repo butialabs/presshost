@@ -11,7 +11,7 @@ LABEL maintainer="Butiá Labs <mecairam@butialabs.com>" \
     org.opencontainers.image.licenses="MIT"
 
 ARG PHP_VERSION=8.4
-ARG NGINX_VERSION=1.26.3-3+deb13u1
+ARG NGINX_VERSION=1.26.3-3+deb13u2
 ARG COMPOSER_VERSION=2.9.4
 ARG WPCLI_VERSION=2.12.0
 ARG S6_OVERLAY_VERSION=3.2.2.0
@@ -92,6 +92,7 @@ ENV TZ=UTC \
     WP_CLI_CACHE_DIR=/.wp-cli/cache \
     WP_CLI_PACKAGES_DIR=/.wp-cli/packages
 
+# Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
     ca-certificates \
@@ -108,7 +109,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     nano \
     whiptail \
-    gettext-base \
+    gettext-base
+
+# Add Sury PHP repository
+RUN curl -fsSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg && \
+    echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list
+
+# Install PHP and NGINX
+RUN apt-get update && apt-get install -y --no-install-recommends \
     php${PHP_VERSION}-fpm \
     php${PHP_VERSION}-cli \
     php${PHP_VERSION}-common \
@@ -167,8 +175,8 @@ RUN chmod +x /etc/s6-overlay/scripts/* \
          && chmod +x /etc/s6-overlay/s6-rc.d/php-fpm/run \
          && rm -f /etc/s6-overlay/s6-rc.d/php-fpm/run.tpl; \
        fi
-COPY rootfs/etc/php/8.4/fpm/pool.d/www.conf.tpl /etc/php/8.4/fpm/pool.d/www.conf.tpl
-COPY rootfs/etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl /etc/php/8.4/fpm/conf.d/99-presshost.ini.tpl
+COPY rootfs/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
+COPY rootfs/etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
 COPY --chmod=644 --chown=root:root rootfs/etc/cron.d/presshost.tpl /etc/cron.d/presshost.tpl
 COPY /rootfs/site/press/index.php /tmp/index.php
