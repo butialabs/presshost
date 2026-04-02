@@ -41,11 +41,11 @@ fi
 verbose_log "Setting up runtime directories..."
 mkdir -p /run/nginx /run/php "${CACHE_PATH}"
 
-# Always clean up any existing NGINX cache directories first
+# Clean up any existing NGINX cache
 verbose_log "Cleaning up any existing NGINX cache directories..."
 rm -rf "${CACHE_PATH}/nginx"
 
-# Only create cache directories if caching is enabled
+# Create cache directories if caching is enabled
 if [ "${NGINX_CACHE}" = "true" ]; then
     verbose_log "NGINX cache enabled, creating cache directories..."
     mkdir -p "${CACHE_PATH}/nginx/fastcgi"
@@ -87,10 +87,12 @@ if [ -f "/etc/nginx/nginx.conf.tpl" ]; then
 fi
 
 # NGINX cache configuration
+autoenv_tpl /etc/nginx/conf.d/cache-path.conf.tpl /etc/nginx/conf.d/cache_path.conf
+
 if [ "${NGINX_CACHE}" = "false" ]; then
     echo "# Cache - Disabled" > /etc/nginx/cache_php_fastcgi.conf
     echo "# Cache - Disabled" > /etc/nginx/cache_server.conf
-    sed -i 's/^[[:space:]]*fastcgi_cache_path/#&/' /etc/nginx/nginx.conf
+    echo "# Cache - Disabled" > /etc/nginx/cache_path.conf
     verbose_log "NGINX FastCGI cache disabled"
 else
     verbose_log "NGINX FastCGI cache enabled"
@@ -162,12 +164,5 @@ find /etc -name "*.tpl" -type f -delete 2>/dev/null || true
 
 # Fix ownership
 fast-chown "${APP_PATH}"
-
-# Reload NGINX if needed
-if [ -f "/run/nginx.pid" ]; then
-    verbose_log "Reloading NGINX configuration..."
-    nginx -s reload
-    verbose_log "NGINX configuration reloaded"
-fi
 
 verbose_log "PressHost initialization complete!"
