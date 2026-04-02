@@ -39,8 +39,20 @@ fi
 
 # Runtime directories
 verbose_log "Setting up runtime directories..."
-mkdir -p /run/nginx /run/php "${CACHE_PATH}/nginx/fastcgi" "${CACHE_PATH}"
-fast-chown /run/php /run/nginx "${CACHE_PATH}/nginx"
+mkdir -p /run/nginx /run/php "${CACHE_PATH}"
+
+# Always clean up any existing NGINX cache directories first
+verbose_log "Cleaning up any existing NGINX cache directories..."
+rm -rf "${CACHE_PATH}/nginx"
+
+# Only create cache directories if caching is enabled
+if [ "${NGINX_CACHE}" = "true" ]; then
+    verbose_log "NGINX cache enabled, creating cache directories..."
+    mkdir -p "${CACHE_PATH}/nginx/fastcgi"
+    fast-chown /run/php /run/nginx "${CACHE_PATH}/nginx"
+else
+    verbose_log "NGINX cache disabled, no cache directories will be created."
+fi
 
 # Logrotate configuration
 if [ -f "/etc/logrotate.d/presshost.tpl" ]; then
@@ -78,6 +90,7 @@ fi
 if [ "${NGINX_CACHE}" = "false" ]; then
     echo "# Cache - Disabled" > /etc/nginx/cache_php_fastcgi.conf
     echo "# Cache - Disabled" > /etc/nginx/cache_server.conf
+    sed -i 's/^[[:space:]]*fastcgi_cache_path/#&/' /etc/nginx/nginx.conf
     verbose_log "NGINX FastCGI cache disabled"
 else
     verbose_log "NGINX FastCGI cache enabled"
@@ -104,9 +117,8 @@ fi
 # WordPress cache symlink
 if [ -d "${APP_PATH}/wp-content" ]; then
     if [ -d "${APP_PATH}/wp-content/cache" ] && [ ! -L "${APP_PATH}/wp-content/cache" ]; then
-        mkdir -p "${CACHE_PATH}"
         if [ "$(ls -A ${APP_PATH}/wp-content/cache 2>/dev/null)" ]; then
-            cp -a "${APP_PATH}/wp-content/cache/." "${CACHE_PATH}/"
+            cp -a "${APP_PATH}/wp-content/cache/." "${CACHE_PATH}/press"
         fi
         rm -rf "${APP_PATH}/wp-content/cache"
     fi
@@ -115,7 +127,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
         rm -f "${APP_PATH}/wp-content/cache"
     fi
 
-    ln -sf "${CACHE_PATH}" "${APP_PATH}/wp-content/cache"
+    ln -sf "${CACHE_PATH}/press" "${APP_PATH}/wp-content/cache"
     verbose_log "Cache symlink created"
 fi
 

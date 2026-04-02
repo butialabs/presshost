@@ -196,7 +196,7 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `NGINX_CLIENT_BODY_TIMEOUT`         | `60s`    | Client body timeout                               |
 | `NGINX_CLIENT_HEADER_TIMEOUT`       | `120s`   | Client header timeout                             |
 | `NGINX_SEND_TIMEOUT`                | `60s`    | Send timeout                                      |
-| `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache                        |
+| `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache. When set to false, no cache directories or files are created |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
 
@@ -209,6 +209,21 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `SSL_TRUSTED_CERT_PATH`     | `/etc/nginx/server.crt` | Trusted CA certificate for OCSP stapling |
 | `NGINX_SSL_STAPLING`        | `off`                   | Enable OCSP stapling                     |
 | `NGINX_SSL_STAPLING_VERIFY` | `off`                   | Verify OCSP responses                    |
+
+### NGINX Cache
+
+- On container startup:
+  - Any existing NGINX cache directories are always cleaned up first
+  - This ensures a clean state when upgrading or changing cache settings
+
+- When `NGINX_CACHE=true`:
+  - Cache directories are created in `/site/cache/nginx/fastcgi/`
+  - Cache files are generated during operation
+  - The `X-FastCGI-Cache` header will be present in responses with values like `HIT`, `MISS`, or `BYPASS`
+
+#### Cache Purging
+
+The cache can be purged using the NGINX Cache Purge module. We recommend using the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/)
 
 ### Logging
 
