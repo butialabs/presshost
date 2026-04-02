@@ -263,7 +263,7 @@ RUN set -eux; \
     chmod 644 /etc/cron.d/presshost; \
     chown root:root /etc/cron.d/presshost; \
     # Remove templates
-    find /etc -name "*.tpl" -type f -delete;
+    find /etc -name "*.tpl" -type f -delete
 
 # Copy sample files
 COPY /rootfs/site/press/index.php /tmp/index.php
