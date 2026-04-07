@@ -19,6 +19,15 @@ https://github.com/user-attachments/assets/92308dad-0dd8-4b38-9f5e-f22cc136fb31
 - 📦 Separate code, uploads, cache, and logs — facilitates backup, restore, and migration.
 - 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
 
+## 🚀
+
+PressHost is already trusted by high-traffic websites, including:
+
+- 🎫 [Catraca Livre](https://catracalivre.com.br) — cultural events and entertainment platform
+- 📖 [Manual do Usuario](https://manualdousuario.net) — technology and tutorials website
+
+Together, these sites handle **more than 20 million pageviews per month**, proving PressHost's reliability and performance at scale.
+
 ## Quick Start
 
 ```bash
