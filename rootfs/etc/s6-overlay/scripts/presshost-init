@@ -1,45 +1,71 @@
 #!/bin/bash
 set -e
 
-PHP_VERSION=${PHP_VERSION}
+source /usr/local/bin/common-utils.sh
 
-# Enhanced logging functions
-log_info() {
-    echo "[INFO] $(date -Iseconds) - $@"
-}
-
-log_warn() {
-    echo "[WARN] $(date -Iseconds) - $@" >&2
-}
-
-log_error() {
-    echo "[ERROR] $(date -Iseconds) - $@" >&2
-}
-
-verbose_log() {
-    [ "${VERBOSE}" = "true" ] && log_info "$@" || true
-}
-
-log_info "Starting PressHost initialization..."
+info "Starting PressHost initialization..."
 
 # Process templates
-log_info "Processing templates..."
-/usr/local/bin/process-templates.sh
+info "Starting template processing..."
+
+if [ "${ALLOW_RUNTIME_PHP_ENVVARS}" = "true" ]; then
+    export PHP_CLEAR_ENV="no"
+else
+    export PHP_CLEAR_ENV="yes"
+fi
+
+info "PHP-FPM config..."
+envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_CLEAR_ENV} ${PHP_VERSION}' \
+< /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
+> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+
+envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APC_ENABLED} ${PHP_APC_SHM_SIZE} ${PHP_APC_TTL} ${PHP_APC_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL}' \
+< /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
+> /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
+
+cp /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
+
+info "NGINX config..."
+envsubst '${APP_USER} ${LOGS_PATH} ${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_CLIENT_BODY_BUFFER_SIZE} ${NGINX_CLIENT_HEADER_BUFFER_SIZE} ${NGINX_LARGE_CLIENT_HEADER_BUFFERS} ${NGINX_OUTPUT_BUFFERS} ${NGINX_KEEPALIVE_TIMEOUT} ${NGINX_KEEPALIVE_REQUESTS} ${NGINX_CLIENT_BODY_TIMEOUT} ${NGINX_CLIENT_HEADER_TIMEOUT} ${NGINX_SEND_TIMEOUT} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE}' \
+< /etc/nginx/nginx.conf.tpl \
+> /etc/nginx/nginx.conf
+
+envsubst '${APP_PATH} ${LOGS_PATH} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION}' \
+< /etc/nginx/sites-enabled/presshost.conf.tpl \
+> /etc/nginx/sites-enabled/presshost.conf
+
+if [ "${NGINX_CACHE}" = "true" ]; then
+    envsubst '${CACHE_PATH} ${NGINX_CACHE_MAX_SIZE} ${NGINX_CACHE_INACTIVE}' \
+    < /etc/nginx/conf.d/cache-path.conf.tpl \
+    > /etc/nginx/conf.d/cache-path.conf
+else
+    echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-fastcgi.conf
+    echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-path.conf
+    echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-purge.conf
+fi
+
+info "logrotate config..."
+envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE}' \
+< /etc/logrotate.d/presshost.tpl \
+> /etc/logrotate.d/presshost
+
+info "Removing template files..."
+find /etc -name "*.tpl" -type f -delete
 
 # Runtime directories
-log_info "Setting up runtime directories..."
+info "Setting up runtime directories..."
 mkdir -p /run/nginx /run/php
 fast-chown /run/php /run/nginx
 
 # Default index.php for empty installations
 if [ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]; then
-    log_info "Empty installation directory detected at ${APP_PATH}"
+    info "Empty installation directory detected at ${APP_PATH}"
     if [ -f "/tmp/index.php" ]; then
         cp /tmp/index.php "${APP_PATH}/index.php"
         fast-chown "${APP_PATH}/index.php"
-        log_info "Default index.php copied to ${APP_PATH}"
+        info "Default index.php copied to ${APP_PATH}"
     else
-        log_warn "Warning: Default index.php not found at /tmp/index.php"
+        warning "Default index.php not found at /tmp/index.php"
     fi
 fi
 
@@ -57,7 +83,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     fi
 
     ln -sf "${CACHE_PATH}/press" "${APP_PATH}/wp-content/cache"
-    log_info "Cache symlink created"
+    info "Cache symlink created"
 fi
 
 # WordPress uploads symlink
@@ -75,22 +101,10 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     fi
 
     ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
-    log_info "Uploads symlink created"
+    info "Uploads symlink created"
 fi
 
-# Fix ownership
-fast-chown "${APP_PATH}"
+# Fix ownership - ignore cache and uploads directories
+fast-chown --ignore "cache" --ignore "uploads" "${APP_PATH}"
 
-# Reloading services
-log_info "Reloading services..."
-
-s6-svc -h /run/service/nginx
-log_info "nginx reloaded"
-
-s6-svc -h /run/service/php-fpm
-log_info "php-fpm reloaded"
-
-s6-svc -h /run/service/cron
-log_info "cron reloaded"
-
-log_info "PressHost initialization complete!"
+info "PressHost initialization complete!"

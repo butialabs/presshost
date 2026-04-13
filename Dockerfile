@@ -140,6 +140,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnginx-mod-http-brotli-static \
     libnginx-mod-http-cache-purge \
     && rm -rf /etc/nginx/sites-enabled/* /etc/nginx/sites-available/* \
+    && ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install s6-overlay v3
@@ -152,14 +153,17 @@ RUN set -eux; \
     esac; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -o /tmp/s6-overlay-noarch.tar.xz; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" -o /tmp/s6-overlay-arch.tar.xz; \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-noarch.tar.xz" -o /tmp/s6-overlay-symlinks-noarch.tar.xz; \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-arch.tar.xz" -o /tmp/s6-overlay-symlinks-arch.tar.xz; \
     tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
     tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-overlay-symlinks-noarch.tar.xz; \
+    tar -C / -Jxpf /tmp/s6-overlay-symlinks-arch.tar.xz; \
     rm -f /tmp/s6-overlay-*.tar.xz
 
 # Install composer
 RUN curl -fsSL -o /usr/local/bin/composer https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar \
     && chmod +x /usr/local/bin/composer
-
 
 # Install WP-CLI
 RUN curl -fsSL -o /usr/local/bin/wp https://github.com/wp-cli/wp-cli/releases/download/v${WPCLI_VERSION}/wp-cli-${WPCLI_VERSION}.phar \
@@ -189,8 +193,6 @@ COPY rootfs/etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf.tpl
 COPY rootfs/etc/nginx/sites-enabled/presshost.conf.tpl /etc/nginx/sites-enabled/presshost.conf.tpl
 COPY rootfs/etc/nginx/conf.d/cache-path.conf.tpl /etc/nginx/conf.d/cache-path.conf.tpl
 COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
-COPY rootfs/etc/cron.d/presshost.tpl /etc/cron.d/presshost.tpl
-COPY rootfs/etc/s6-overlay/s6-rc.d/php-fpm/run.tpl /etc/s6-overlay/s6-rc.d/php-fpm/run.tpl
 
 # Timezone configuration
 RUN if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then \
@@ -198,18 +200,9 @@ RUN if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then \
     echo "$TZ" > /etc/timezone; \
 fi
 
-# Process templates
-RUN chmod +x /usr/local/bin/process-templates.sh
-# Don't run process-templates.sh during build - it will be run at container startup
-# to ensure environment variables are properly substituted
-
 # Copy sample files
 COPY rootfs/site/press/index.php /tmp/index.php
 COPY rootfs/site/press/wp-config.php /tmp/wp-config.php
-
-# Copy Presshost Init
-RUN chmod +x /etc/s6-overlay/scripts/* && \
-    ls -la /etc/s6-overlay/scripts/
 
 WORKDIR /site/press
 

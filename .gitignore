@@ -15,6 +15,7 @@
 cron.txt
 
 # General
+docker-deploy.ps1
 composer.phar
 *~
 .fuse_hidden*

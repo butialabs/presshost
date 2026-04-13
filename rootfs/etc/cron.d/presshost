@@ -1,0 +1,8 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/command
+
+# Press Cron (WP-Cli)
+* * * * * root /command/with-contenv /usr/local/bin/wordpress-cron
+
+# NGINX (For renewed SSL certificates)
+0 0 * * * root /command/with-contenv /usr/local/bin/nginx-reload

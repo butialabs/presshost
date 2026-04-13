@@ -1,0 +1,17 @@
+#!/command/with-contenv bash
+
+source /usr/local/bin/common-utils.sh
+SCRIPT_NAME="WORDPRESS-CRON"
+
+LOG_FILE="${LOGS_PATH}/cron-presshost.log"
+
+info "Running WordPress cron events" >> "${LOG_FILE}" 2>&1
+
+if /usr/local/bin/wp --path="${APP_PATH}" --allow-root cron event run --due-now >> "${LOG_FILE}" 2>&1; then
+    success "WordPress cron events completed successfully" >> "${LOG_FILE}" 2>&1
+else
+    error "Failed to run WordPress cron events" >> "${LOG_FILE}" 2>&1
+    exit 1
+fi
+
+exit 0

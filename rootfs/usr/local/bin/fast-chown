@@ -3,11 +3,51 @@ set -e
 
 TARGET_USER="${APP_USER:-www-data}"
 TARGET_GROUP="${APP_GROUP:-www-data}"
+IGNORE_DIRS=()
 
-[ $# -eq 0 ] && { echo "Usage: fast-chown <path>..." >&2; exit 1; }
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ignore)
+            shift
+            if [[ $# -gt 0 ]]; then
+                IGNORE_DIRS+=("$1")
+                shift
+            else
+                echo "Error: --ignore requires a directory path" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
+[ $# -eq 0 ] && { echo "Usage: fast-chown [--ignore <dir>]... <path>..." >&2; exit 1; }
+
+# Build the find command with exclusions
 for path in "$@"; do
     [ -e "$path" ] || continue
-    find "$path" \( ! -user "$TARGET_USER" -o ! -group "$TARGET_GROUP" \) \
-        -exec chown "${TARGET_USER}:${TARGET_GROUP}" {} + 2>/dev/null || true
+    
+    # Start building the find command
+    FIND_CMD="find \"$path\""
+    
+    # Add exclusions for each ignored directory
+    for ignore_dir in "${IGNORE_DIRS[@]}"; do
+        # Check if the ignore_dir is absolute or relative
+        if [[ "$ignore_dir" = /* ]]; then
+            # Absolute path
+            FIND_CMD+=" -path \"$ignore_dir\" -prune -o"
+        else
+            # Relative path - match any occurrence in the path
+            FIND_CMD+=" -path \"*/$ignore_dir\" -prune -o"
+        fi
+    done
+    
+    # Complete the find command with ownership check and chown action
+    FIND_CMD+=" -type f,d \( ! -user \"$TARGET_USER\" -o ! -group \"$TARGET_GROUP\" \) -exec chown \"${TARGET_USER}:${TARGET_GROUP}\" {} + 2>/dev/null || true"
+    
+    # Execute the command
+    eval $FIND_CMD
 done
