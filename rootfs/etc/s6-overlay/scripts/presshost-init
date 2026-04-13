@@ -81,4 +81,16 @@ fi
 # Fix ownership
 fast-chown "${APP_PATH}"
 
+# Reloading services
+log_info "Reloading services..."
+
+s6-svc -h /run/service/nginx
+log_info "nginx reloaded"
+
+s6-svc -h /run/service/php-fpm
+log_info "php-fpm reloaded"
+
+s6-svc -h /run/service/cron
+log_info "cron reloaded"
+
 log_info "PressHost initialization complete!"
