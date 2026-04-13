@@ -104,7 +104,7 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     info "Uploads symlink created"
 fi
 
-# Fix ownership - ignore cache and uploads directories
-fast-chown --ignore "cache" --ignore "uploads" "${APP_PATH}"
+# Fix ownership
+fast-chown --ignore "${APP_PATH}/wp-content/uploads" --ignore "${APP_PATH}/wp-content/cache" "${APP_PATH}"
 
 info "PressHost initialization complete!"
