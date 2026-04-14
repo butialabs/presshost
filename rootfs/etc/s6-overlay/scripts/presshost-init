@@ -69,6 +69,9 @@ if [ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]; then
     fi
 fi
 
+# Fix ownership
+fast-chown ${APP_PATH}
+
 # WordPress cache symlink
 if [ -d "${APP_PATH}/wp-content" ]; then
     if [ -d "${APP_PATH}/wp-content/cache" ] && [ ! -L "${APP_PATH}/wp-content/cache" ]; then
@@ -103,8 +106,5 @@ if [ -d "${APP_PATH}/wp-content" ]; then
     ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
     info "Uploads symlink created"
 fi
-
-# Fix ownership
-fast-chown --ignore "${APP_PATH}/wp-content/uploads" --ignore "${APP_PATH}/wp-content/cache" "${APP_PATH}"
 
 info "PressHost initialization complete!"
