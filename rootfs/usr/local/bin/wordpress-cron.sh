@@ -1,9 +1,9 @@
-#!/command/with-contenv bash
+#!/bin/bash
+set -e
 
-source /usr/local/bin/common-utils.sh
-SCRIPT_NAME="WORDPRESS-CRON"
-
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 LOG_FILE="${LOGS_PATH}/cron-presshost.log"
+source "${SCRIPT_DIR}/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
 
 info "Running WordPress cron events" >> "${LOG_FILE}" 2>&1
 
