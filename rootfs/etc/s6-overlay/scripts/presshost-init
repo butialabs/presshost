@@ -19,6 +19,7 @@ if [ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]; then
     envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_CLEAR_ENV} ${PHP_VERSION}' \
     < /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
     > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+    rm -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
 fi
 
 if [ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]; then
@@ -27,6 +28,7 @@ if [ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]; then
     > /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
 
     cp /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
+    rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
 
 if [ -f /etc/nginx/nginx.conf.tpl ]; then
@@ -34,12 +36,14 @@ if [ -f /etc/nginx/nginx.conf.tpl ]; then
     envsubst '${APP_USER} ${LOGS_PATH} ${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_CLIENT_BODY_BUFFER_SIZE} ${NGINX_CLIENT_HEADER_BUFFER_SIZE} ${NGINX_LARGE_CLIENT_HEADER_BUFFERS} ${NGINX_OUTPUT_BUFFERS} ${NGINX_KEEPALIVE_TIMEOUT} ${NGINX_KEEPALIVE_REQUESTS} ${NGINX_CLIENT_BODY_TIMEOUT} ${NGINX_CLIENT_HEADER_TIMEOUT} ${NGINX_SEND_TIMEOUT} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE}' \
     < /etc/nginx/nginx.conf.tpl \
     > /etc/nginx/nginx.conf
+    rm -f /etc/nginx/nginx.conf.tpl
 fi
 
 if [ -f /etc/nginx/sites-enabled/presshost.conf.tpl ]; then
     envsubst '${APP_PATH} ${LOGS_PATH} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION}' \
     < /etc/nginx/sites-enabled/presshost.conf.tpl \
     > /etc/nginx/sites-enabled/presshost.conf
+    rm -f /etc/nginx/sites-enabled/presshost.conf.tpl
 fi
 
 if [ -f /etc/nginx/conf.d/cache-path.conf.tpl ]; then
@@ -59,10 +63,8 @@ if [ -f /etc/logrotate.d/presshost.tpl ]; then
     envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE}' \
     < /etc/logrotate.d/presshost.tpl \
     > /etc/logrotate.d/presshost
+    rm -f /etc/logrotate.d/presshost.tpl
 fi
-
-info "Removing template files..."
-find /etc -name "*.tpl" -type f -delete
 
 # Runtime directories
 info "Setting up runtime directories..."
