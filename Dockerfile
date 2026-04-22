@@ -177,22 +177,26 @@ RUN mkdir -p /site/press /site/uploads /site/cache /site/logs $WP_CLI_DIR $WP_CL
     fi
 
 COPY --chmod=755 rootfs/usr/local/bin/ /usr/local/bin/
-COPY rootfs/etc/nginx/ /etc/nginx/
-RUN chmod 644 /etc/nginx/server.crt && chmod 600 /etc/nginx/server.key && chmod 644 /etc/nginx/dhparam.pem
 
-# Copy s6-overlay configuration
+# Copy s6-overlay files
 COPY rootfs/etc/s6-overlay/ /etc/s6-overlay/
 RUN chmod +x /etc/s6-overlay/scripts/* \
     && find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \; \
     && find /etc/s6-overlay/s6-rc.d -name "up" -exec chmod +x {} \;
 
-# Copy template files
-COPY rootfs/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
-COPY rootfs/etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
-COPY rootfs/etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf.tpl
-COPY rootfs/etc/nginx/sites-enabled/presshost.conf.tpl /etc/nginx/sites-enabled/presshost.conf.tpl
-COPY rootfs/etc/nginx/conf.d/cache-path.conf.tpl /etc/nginx/conf.d/cache-path.conf.tpl
-COPY rootfs/etc/logrotate.d/presshost.tpl /etc/logrotate.d/presshost.tpl
+# Copy NGINX files
+COPY rootfs/etc/nginx/ /etc/nginx/
+RUN chmod 644 /etc/nginx/server.crt && chmod 600 /etc/nginx/server.key && chmod 644 /etc/nginx/dhparam.pem
+
+# Copy cron files
+COPY rootfs/etc/cron.d/ /etc/cron.d/
+
+# Copy PHP files
+COPY rootfs/etc/php/fpm/pool.d/www.conf.tpl /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
+COPY rootfs/etc/php/fpm/conf.d/99-presshost.ini.tpl /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
+
+# Copy Logrotate files
+COPY rootfs/etc/logrotate.d/ /etc/logrotate.d/
 
 # Timezone configuration
 RUN if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then \
