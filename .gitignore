@@ -1,3 +1,4 @@
+
 # Press
 /press/wp-content/uploads/
 /press/wp-content/blogs.dir/
@@ -12,16 +13,30 @@
 /press/wp-config-sample.php
 /press/.maintenance
 /press/.htaccess
-cron.txt
 
 # General
-docker-deploy.ps1
 composer.phar
 *~
 .fuse_hidden*
 .directory
 .Trash-*
 .nfs*
+
+# Environment
+.env
+.env.test
+.env*.local
+
+# Logs
+logs
+*.log
+*.pid
+
+# Temp
+tmp/
+temp/
+
+# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -39,60 +54,9 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-pids
-*.pid
-*.seed
-*.pid.lock
-lib-cov
-coverage
-*.lcov
-.nyc_output
-.grunt
-bower_components
-.lock-wscript
-build/Release
-node_modules/
-jspm_packages/
-typings/
-*.tsbuildinfo
-.npm
-.eslintcache
-.stylelintcache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-.node_repl_history
-*.tgz
-.yarn-integrity
-env
-env.
-.env
-.env.test
-.env*.local
-.cache
-.parcel-cache
-.next
-.nuxt
-.out
-.storybook-out
-storybook-static
-.cache/
-.vuepress/dist
-.serverless/
-.fusebox/
-.dynamodb/
-.tern-port
-.vscode-test
-tmp/
-temp/
+
+# Windows
+*.ps1
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -100,10 +64,7 @@ ehthumbs_vista.db
 *.stackdump
 [Dd]esktop.ini
 $RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
 *.lnk
+
+# IDE
 .idea/

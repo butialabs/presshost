@@ -10,6 +10,7 @@ docs/
 
 # Docker files
 docker-compose*.yml
+compose.yml
 .dockerignore
 
 # Environment files
