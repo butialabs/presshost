@@ -39,3 +39,5 @@ display_errors = Off
 display_startup_errors = Off
 log_errors = On
 error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+
+disable_functions = ${PHP_DISABLE_FUNCTIONS}
