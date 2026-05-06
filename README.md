@@ -6,25 +6,24 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![PHP Version](https://img.shields.io/badge/php-8.4-purple.svg)](https://www.php.net/)
 [![NGINX](https://img.shields.io/badge/nginx-1.26-brightgreen.svg)](https://nginx.org/)
-[![s6-overlay](https://img.shields.io/badge/s6--overlay-3.2.1.0-orange.svg)](https://github.com/just-containers/s6-overlay)
+[![s6-overlay](https://img.shields.io/badge/s6--overlay-3.2.2.0-orange.svg)](https://github.com/just-containers/s6-overlay)
 
 ## Features
 
 https://github.com/user-attachments/assets/92308dad-0dd8-4b38-9f5e-f22cc136fb31
 
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
-- 🔐 Rootless by default
 - 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
 - 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
-- 📦 Separate code, uploads, cache, and logs — facilitates backup, restore, and migration.
+- 📦 Separate code, uploads, cache, and logs!
 - 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
 
 ## 🚀
 
 PressHost is already trusted by high-traffic websites, including:
 
-- 🎫 [Catraca Livre](https://catracalivre.com.br) — cultural events and entertainment platform
-- 📖 [Manual do Usuario](https://manualdousuario.net) — technology and tutorials website
+- 🎫 [Catraca Livre](https://catracalivre.com.br) - cultural events and entertainment platform
+- 📖 [Manual do Usuario](https://manualdousuario.net) - technology and tutorials website
 
 Together, these sites handle **more than 20 million pageviews per month**, proving PressHost's reliability and performance at scale.
 
@@ -38,14 +37,15 @@ docker compose up -d
 
 ### Required variables
 
-| Variable      | Description       | Example                   |
-| ------------- | ----------------- | ------------------------- |
-| `DB_NAME`     | Database name     | `presshost`               |
-| `DB_USER`     | Database user     | `presshost`               |
-| `DB_PASSWORD` | Database password | `p@ssw0rd`                |
-| `DB_HOST`     | Database host     | `db`                      |
-| `WP_SITEURL`  | Site URL          | `https://your-domain.xyz` |
-| `WP_HOME`     | Home URL          | `https://your-domain.xyz` |
+| Variable      | Description                                                          | Example                   |
+| ------------- | -------------------------------------------------------------------- | ------------------------- |
+| `DB_NAME`     | Database name                                                        | `presshost`               |
+| `DB_USER`     | Database user                                                        | `presshost`               |
+| `DB_PASSWORD` | Database password                                                    | `p@ssw0rd`                |
+| `DB_HOST`     | Database host                                                        | `db`                      |
+| `SITEURL`     | Site URL, used for `server_name` and as default for WP_SITEURL/WP_HOME | `https://your-domain.xyz` |
+
+> `WP_SITEURL` and `WP_HOME` fall back to `SITEURL` when not set. `server_name` is also derived from the host portion of `SITEURL`.
 
 ### Volumes
 
@@ -61,14 +61,6 @@ docker compose up -d
 > If it's a migration, you can skip the installation and just copy the files to the correct volumes.
 
 > Upon startup, an index.php file would be displayed automatically if none already exists.
-
-After starting your container, run the interactive installer:
-
-```bash
-docker exec -it presshost ./presshost
-```
-
-The installer will guide you through WordPress or ClassicPress installation.
 
 ## All Environments
 
@@ -137,13 +129,15 @@ The installer will guide you through WordPress or ClassicPress installation.
 
 | Variable       | Default         | Description            |
 | -------------- | --------------- | ---------------------- |
-| `APP_PATH`     | `/site/press`   | Application path       |
-| `UPLOADS_PATH` | `/site/uploads` | Uploads directory path |
-| `CACHE_PATH`   | `/site/cache`   | Cache directory path   |
-| `LOGS_PATH`    | `/site/logs`    | Logs directory path    |
-| `APP_USER`     | `www-data`      | Application user       |
-| `APP_GROUP`    | `www-data`      | Application group      |
-| `TZ`           | `UTC`           | Timezone               |
+| `APP_PATH`        | `/site/press`   | Application path                                |
+| `UPLOADS_PATH`    | `/site/uploads` | Uploads directory path                          |
+| `CACHE_PATH`     | `/site/cache`   | Cache directory path                                                  |
+| `LOGS_PATH`      | `/site/logs`    | Logs directory path                                                   |
+| `APP_USER`       | `www-data`      | User that owns `/site/press` and runs the php-fpm/nginx **workers**   |
+| `APP_GROUP`      | `www-data`      | Group counterpart of `APP_USER`                                       |
+| `NGINX_HTTP_PORT` | `80`           | HTTP port the container listens on                                    |
+| `NGINX_HTTPS_PORT`| `443`          | HTTPS port the container listens on                                   |
+| `TZ`             | `UTC`           | Timezone                                                              |
 
 ### PHP
 
@@ -157,14 +151,14 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `PHP_UPLOAD_MAX_FILESIZE`           | `64M`     | Max upload size                                  |
 | `PHP_DEFAULT_SOCKET_TIMEOUT`        | `60`      | Default socket timeout (seconds)                 |
 | `PHP_OUTPUT_BUFFERING`              | `4096`    | Output buffering size                            |
-| `PHP_PM`                            | `dynamic` | Process manager type (static, dynamic, ondemand) |
-| `PHP_PM_MAX_CHILDREN`               | `50`      | Max children processes                           |
+| `PHP_PM`                            | `auto`    | Process manager type (`auto`, static, dynamic, ondemand). `auto` picks `static` for ≤2GB containers, `dynamic` otherwise. |
+| `PHP_PM_MAX_CHILDREN`               | `auto`    | Max children processes (`auto` sizes from container memory; or set a fixed integer like `50`) |
 | `PHP_PM_START_SERVERS`              | `10`      | Start servers (preforked workers)                |
 | `PHP_PM_MIN_SPARE_SERVERS`          | `10`      | Min spare servers                                |
 | `PHP_PM_MAX_SPARE_SERVERS`          | `35`      | Max spare servers                                |
-| `PHP_PM_MAX_REQUESTS`               | `1000`    | Max requests per child (prevents memory leaks)   |
+| `PHP_PM_MAX_REQUESTS`               | `500`     | Max requests per child (prevents memory leaks)   |
 | `PHP_PM_PROCESS_IDLE_TIMEOUT`       | `10s`     | Idle timeout for ondemand PM                     |
-| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` | `300`     | Request terminate timeout (seconds)              |
+| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` | `60`      | Request terminate timeout (seconds)              |
 | `PHP_FPM_LISTEN_BACKLOG`            | `65535`   | Listen queue backlog size                        |
 | `PHP_FPM_RLIMIT_FILES`              | `65535`   | Max open files limit                             |
 | `PHP_OPCACHE_ENABLE`                | `1`       | Enable OPcache                                   |
@@ -172,9 +166,10 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `PHP_OPCACHE_INTERNED_STRINGS`      | `16`      | Interned strings buffer (MB)                     |
 | `PHP_OPCACHE_MAX_FILES`             | `20000`   | Max cached files                                 |
 | `PHP_OPCACHE_REVALIDATE_FREQ`       | `2`       | Revalidate frequency (seconds)                   |
-| `PHP_OPCACHE_VALIDATE_TIMESTAMPS`   | `1`       | Validate timestamps (0 for production)           |
-| `PHP_OPCACHE_JIT`                   | `tracing` | JIT mode (tracing, function, off)                |
-| `PHP_OPCACHE_JIT_BUFFER_SIZE`       | `128M`    | JIT buffer size                                  |
+| `PHP_OPCACHE_VALIDATE_TIMESTAMPS`   | `0`       | Validate timestamps (0 = production; redeploy/restart container to pick up code changes) |
+| `PHP_OPCACHE_JIT`                   | `off`     | JIT mode (`tracing`, `function`, `off`). Disabled by default. |
+| `PHP_OPCACHE_JIT_BUFFER_SIZE`       | `128M`    | JIT buffer size (only used when JIT is enabled)  |
+| `PHP_DISABLE_FUNCTIONS`             | `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec` | Comma-separated list of disabled PHP functions (set to empty string to allow all) |
 | `PHP_SESSION_COOKIE_HTTPONLY`       | `1`       | Session cookie httponly                          |
 | `PHP_SESSION_COOKIE_SECURE`         | `1`       | Session cookie secure                            |
 | `PHP_SESSION_USE_STRICT_MODE`       | `1`       | Session use strict mode                          |
@@ -208,16 +203,24 @@ The installer will guide you through WordPress or ClassicPress installation.
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache. When set to false, no cache directories or files are created |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
+| `NGINX_CACHE_SPLIT_MOBILE`          | `false`  | Split cache by mobile/desktop user agent          |
+| `NGINX_GZIP_COMP_LEVEL`             | `6`      | gzip compression level (1-9)                      |
+| `NGINX_BROTLI_COMP_LEVEL`           | `4`      | brotli compression level (0-11) for dynamic content |
+| `NGINX_HTTP3`                       | `false`  | Enable HTTP/3 (QUIC) on port 443/udp              |
+| `NGINX_SERVER_NAME`                 | derived from `SITEURL` | Override `server_name` directive    |
 
 ### SSL
 
-| Variable                    | Default                 | Description                              |
-| --------------------------- | ----------------------- | ---------------------------------------- |
-| `SSL_CERT_PATH`             | `/etc/nginx/server.crt` | SSL certificate path                     |
-| `SSL_PRIVATE_PATH`          | `/etc/nginx/server.key` | SSL private key path                     |
-| `SSL_TRUSTED_CERT_PATH`     | `/etc/nginx/server.crt` | Trusted CA certificate for OCSP stapling |
-| `NGINX_SSL_STAPLING`        | `off`                   | Enable OCSP stapling                     |
-| `NGINX_SSL_STAPLING_VERIFY` | `off`                   | Verify OCSP responses                    |
+| Variable                    | Default                | Description                              |
+| --------------------------- | ---------------------- | ---------------------------------------- |
+| `SSL_CERT_PATH`             | `/site/ssl/server.crt` | SSL certificate path                     |
+| `SSL_PRIVATE_PATH`          | `/site/ssl/server.key` | SSL private key path                     |
+| `SSL_TRUSTED_CERT_PATH`     | `/site/ssl/server.crt` | Trusted CA certificate for OCSP stapling |
+| `NGINX_SSL_STAPLING`        | `off`                  | Enable OCSP stapling                     |
+| `NGINX_SSL_STAPLING_VERIFY` | `off`                  | Verify OCSP responses                    |
+
+On the first start, if the files at `SSL_CERT_PATH` and `SSL_PRIVATE_PATH` do not exist, a self-signed certificate is generated automatically. Mount `/site/ssl` as a volume to persist it across container recreates and image updates.
+Existing files are never overwritten, so providing your own certificate (Let's Encrypt, internal CA, etc.) just works by mounting it at the configured paths.
 
 ### NGINX Cache
 
@@ -236,12 +239,13 @@ The cache can be purged using the NGINX Cache Purge module. We recommend using t
 
 ### Logging
 
-| Variable       | Default | Description               |
-| -------------- | ------- | ------------------------- |
-| `VERBOSE`      | `false` | Enable verbose logging    |
-| `DEBUG`        | `false` | Enable debug logging      |
-| `LOG_MAX_SIZE` | `10M`   | Log max size for rotation |
-| `LOG_MAX_AGE`  | `30`    | Log max age for rotation  |
+All logs are written under `/site/logs` and rotated daily by `logrotate`: `nginx-access.log`, `nginx-error.log`, `php-fpm.log`, `php-error.log`, `php-slow.log`, `cron-presshost.log`, `cron-nginx.log` and `wp-debug.log` (when `WP_DEBUG_LOG=true`).
+
+| Variable       | Default | Description                                                                                                  |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `LOG_LEVEL`    | `WARN`  | `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. Default shows only errors and serious warnings. |
+| `LOG_MAX_SIZE` | `100M`  | Logrotate trigger size                                                                                       |
+| `LOG_MAX_AGE`  | `7`     | Number of rotated copies to keep (days)                                                                      |
 
 ### Installation
 
@@ -252,9 +256,26 @@ These variables are used during the interactive installation process via `pressh
 | `INSTALL_WORDPRESS_VERSION`    | `latest` | Specific WordPress version to install    |
 | `INSTALL_CLASSICPRESS_VERSION` | `latest` | Specific ClassicPress version to install |
 
+### Anti-flood / DDoS hardening
+
+PressHost ships with built-in protections that keep PHP/NGINX healthy under load:
+
+| Variable               | Default | Description                                              |
+| ---------------------- | ------- | -------------------------------------------------------- |
+| `NGINX_RATE_LIMIT`     | `30r/s` | Per-IP request rate (zone `global_limit`)                |
+| `NGINX_RATE_BURST`     | `60`    | Burst tolerance before 429                               |
+| `NGINX_CONN_LIMIT`     | `50`    | Max simultaneous connections per IP                      |
+| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT`  | `60`  | Kill stuck workers after N seconds              |
+| `PHP_FPM_REQUEST_SLOWLOG_TIMEOUT`    | `5s`  | Log slow requests                               |
+| `PHP_FPM_EMERGENCY_RESTART_THRESHOLD`| `10`  | Crashed workers in interval to trigger master restart |
+| `PHP_FPM_EMERGENCY_RESTART_INTERVAL` | `1m`  | Interval for the emergency restart counter      |
+| `PHP_FPM_PROCESS_CONTROL_TIMEOUT`    | `10s` | Master/worker IPC timeout                       |
+
 ### Custom Constants
 
 Any environment variable starting with `PRESS_` is automatically converted to a Press constant. The `PRESS_` prefix is removed and the value is passed to `wp-config.php`.
+
+> **Security note:** PHP-FPM runs with `clear_env=yes`. The init script forwards an explicit allow-list (`DB_*`, `WP_*`, `SMTP_*`, `AUTH_*`/salts, `PRESS_*`, `INSTALL_*`, `SITEURL`, `TZ`, etc.) into the pool. Variables outside that list are not exposed to PHP - `phpinfo()` will not leak unrelated container env vars.
 
 **Examples:**
 
@@ -287,6 +308,45 @@ services:
 > **Note:** The `SSL_TRUSTED_CERT_PATH` variable should point to the intermediate certificate chain (`chain.pem`) for OCSP stapling to work correctly. Without this, you may see warnings like "ssl_stapling ignored, no OCSP responder URL in the certificate".
 
 > **Note:** Nginx automatically reloads daily at 00:00 (container timezone) to pick up renewed certificates. This ensures seamless certificate rotation without manual intervention.
+
+
+### CLI and Tips:
+
+#### Installer
+
+The container ships with the `presshost` CLI. Launch it with:
+
+```bash
+docker exec -it presshost presshost
+```
+
+When **no WordPress/ClassicPress** is installed yet, the menu lets you:
+
+1. **Install WordPress**: downloads `wordpress.org/latest.zip` (or a specific version), unpacks it to `/site/press`, generates `wp-config.php` + `wp-secrets.php` (locally generated salts, no external API), runs `wp core install`, and resets ownership of the install directory to `www-data:www-data`.
+2. **Install ClassicPress**: same flow, pulling from the official ClassicPress release archive.
+
+When a site is **already installed**, the menu offers:
+
+1. **View installation info**: shows detected type (WordPress/ClassicPress), version, site URL, title and the configured directories (`/site/press`, `/site/uploads`, `/site/cache`).
+2. **Exit**.
+
+You can also invoke the installer non-interactively:
+
+```bash
+# Same flows scripted via env vars (no TTY required)
+docker exec -e PRESSHOST_DEFAULT_ACTION=wordpress \
+            -e INSTALL_URL=https://example.com \
+            -e INSTALL_EMAIL=admin@example.com \
+            -it presshost presshost
+```
+
+#### Fix permissions
+
+`presshost fix-perms` resets ownership to `www-data:www-data` and applies safe permissions (`755` for directories, `644` for files, `640` for `wp-config.php` and `wp-secrets.php`) on `/site/{press,uploads,cache,logs}`. It must be invoked with the root account inside the container:
+
+```bash
+docker exec -u 0 presshost presshost fix-perms
+```
 
 ---
 

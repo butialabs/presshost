@@ -1,0 +1,458 @@
+name: CI
+
+on:
+  push:
+
+env:
+  IMAGE_NAME: presshost:latest
+  CONTAINER_NAME: presshost
+  DB_CONTAINER: presshost-db
+  NETWORK: presshost
+  DB_NAME: presshost
+  DB_USER: presshost
+  DB_PASSWORD: "p@ssw0rd"
+  DB_ROOT_PASSWORD: "p@ssw0rd"
+  WP_ADMIN_USER: presshost
+  WP_ADMIN_PASSWORD: "p@ssw0rd"
+  WP_ADMIN_EMAIL: admin@presshost.xyz
+  APP_USER: www-data
+  APP_GROUP: www-data
+  BASE_URL: http://localhost
+
+jobs:
+  ci:
+    name: Build and Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t "$IMAGE_NAME" .
+
+      - name: Cleanup previous containers
+        run: |
+          docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" 2>/dev/null || true
+          docker network rm "$NETWORK" 2>/dev/null || true
+
+      - name: Start MariaDB
+        run: |
+          docker network create "$NETWORK"
+          docker run -d --name "$DB_CONTAINER" \
+            --network "$NETWORK" \
+            -e MARIADB_ROOT_PASSWORD="$DB_ROOT_PASSWORD" \
+            -e MARIADB_DATABASE="$DB_NAME" \
+            -e MARIADB_USER="$DB_USER" \
+            -e MARIADB_PASSWORD="$DB_PASSWORD" \
+            mariadb:11
+
+      - name: Wait for MariaDB
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec "$DB_CONTAINER" mariadb-admin ping -uroot -p"$DB_ROOT_PASSWORD" 2>&1 \
+                | grep -qE 'mariadb is alive|mysqld is alive'; then
+              echo "MariaDB is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MariaDB failed to become ready"
+          docker logs "$DB_CONTAINER"
+          exit 1
+
+      - name: Start PressHost
+        run: |
+          docker run -d --name "$CONTAINER_NAME" \
+            --network "$NETWORK" \
+            -p 80:80 \
+            -p 443:443 \
+            -e SITEURL="$BASE_URL" \
+            -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" \
+            -e DB_PASSWORD="$DB_PASSWORD" \
+            -e DB_HOST="$DB_CONTAINER" \
+            -e PHP_PM_MAX_CHILDREN=auto \
+            -e NGINX_CACHE_SPLIT_MOBILE=true \
+            -e NGINX_GZIP_COMP_LEVEL=5 \
+            -e NGINX_BROTLI_COMP_LEVEL=4 \
+            -e LOG_LEVEL=DEBUG \
+            -e PRESS_GOOGLE_KEY=abc123 \
+            "$IMAGE_NAME"
+          sleep 12
+          STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "missing")
+          if [ "$STATUS" != "running" ]; then
+            echo "Container failed to start (status: $STATUS). Logs:"
+            docker logs "$CONTAINER_NAME"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: |
+          set +e
+          PASS=0
+          FAIL=0
+          FAILURES=()
+
+          pass()             { echo "  [PASS] $1"; PASS=$((PASS+1)); }
+          fail()             { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); FAILURES+=("$1"); }
+          info()             { echo "  $1"; }
+          step()             { echo ""; echo "::group::=== $1 ==="; }
+          end_step()         { echo "::endgroup::"; }
+
+          assert_contains() {
+            local haystack="$1" needle="$2" label="$3"
+            if echo "$haystack" | grep -qF "$needle"; then
+              pass "$label"
+            else
+              fail "$label  (expected to contain '$needle')"
+            fi
+          }
+
+          assert_not_contains() {
+            local haystack="$1" needle="$2" label="$3"
+            if echo "$haystack" | grep -qF "$needle"; then
+              fail "$label  (should NOT contain '$needle')"
+            else
+              pass "$label"
+            fi
+          }
+
+          assert_match() {
+            local haystack="$1" pattern="$2" label="$3"
+            if echo "$haystack" | grep -qE "$pattern"; then
+              pass "$label"
+            else
+              fail "$label  (expected to match /$pattern/)"
+            fi
+          }
+
+          dexec() {
+            local container="$1"; shift
+            docker exec "$container" "$@" 2>&1
+          }
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Testing NGINX and PHP-FPM"
+          # ──────────────────────────────────────────────────────────────────────
+          EXPECTED_APP_UID=$(dexec "$CONTAINER_NAME" id -u "$APP_USER" | tr -d '[:space:]')
+
+          NGINX_WORKER_UID=$(dexec "$CONTAINER_NAME" sh -c \
+            'ps -eo uid,args | awk '"'"'$2 == "nginx:" && $3 == "worker" {print $1}'"'"' | sort -u | tr '"'"'\n'"'"' '"'"','"'"' | sed '"'"'s/,$//'"'"'')
+          if [ "${NGINX_WORKER_UID// /}" = "$EXPECTED_APP_UID" ]; then
+            pass "nginx workers run as ${APP_USER} (UID $EXPECTED_APP_UID)"
+          else
+            fail "nginx workers expected UID $EXPECTED_APP_UID, observed: '${NGINX_WORKER_UID// /}'"
+          fi
+
+          FPM_MASTER_UID=$(dexec "$CONTAINER_NAME" sh -c \
+            'ps -eo uid,args | awk '"'"'$2 == "php-fpm:" && $3 == "master" {print $1}'"'"' | sort -u | tr '"'"'\n'"'"' '"'"','"'"' | sed '"'"'s/,$//'"'"'')
+          if [ "${FPM_MASTER_UID// /}" = "0" ]; then
+            pass "PHP-FPM master runs as root"
+          else
+            fail "PHP-FPM master expected UID 0, observed: '${FPM_MASTER_UID// /}'"
+          fi
+
+          FPM_WORKER_UID=$(dexec "$CONTAINER_NAME" sh -c \
+            'ps -eo uid,args | awk '"'"'$2 == "php-fpm:" && $3 == "pool" {print $1}'"'"' | sort -u | tr '"'"'\n'"'"' '"'"','"'"' | sed '"'"'s/,$//'"'"'')
+          if [ "${FPM_WORKER_UID// /}" = "$EXPECTED_APP_UID" ]; then
+            pass "PHP-FPM workers run as $APP_USER"
+          else
+            fail "PHP-FPM workers expected UID $EXPECTED_APP_UID, observed: '${FPM_WORKER_UID// /}'"
+          fi
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Presshost initialization"
+          # ──────────────────────────────────────────────────────────────────────
+          LOGS=$(docker logs "$CONTAINER_NAME" 2>&1)
+          assert_contains "$LOGS" "PressHost initialization complete" "init script ran to completion"
+          assert_contains "$LOGS" "Auto-calculated PHP_PM_MAX_CHILDREN" "PHP_PM_MAX_CHILDREN=auto resolved at boot"
+
+          LEFTOVER=$(dexec "$CONTAINER_NAME" sh -c "find /etc/nginx /etc/php -name '*.tpl' 2>/dev/null")
+          if [ -z "$(echo "$LEFTOVER" | tr -d '[:space:]')" ]; then
+            pass "no .tpl files left under /etc/nginx or /etc/php"
+          else
+            fail "leftover .tpl files: $LEFTOVER"
+          fi
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "NGINX configurations"
+          # ──────────────────────────────────────────────────────────────────────
+          NGINX_CONF=$(dexec "$CONTAINER_NAME" cat /etc/nginx/nginx.conf)
+          SITE_CONF=$(dexec "$CONTAINER_NAME" cat /etc/nginx/sites-enabled/presshost.conf)
+
+          assert_contains "$NGINX_CONF" "user $APP_USER"               "'user' directive drops workers to $APP_USER"
+          assert_contains "$NGINX_CONF" "ssl_prefer_server_ciphers off" "prefer_server_ciphers off"
+          assert_contains "$NGINX_CONF" "limit_req_zone"                "rate-limit zones declared"
+          assert_contains "$NGINX_CONF" "limit_conn_zone"               "limit_conn zone declared"
+          assert_contains "$SITE_CONF"  "listen 80"                     "NGINX listens on 80 (HTTP)"
+          assert_contains "$SITE_CONF"  "listen 443 ssl"                "NGINX listens on 443 (HTTPS)"
+          assert_contains "$SITE_CONF"  "server_name localhost"         "server_name derived from SITEURL host"
+          assert_contains "$SITE_CONF"  "limit_req zone=login_limit"    "wp-login.php has rate-limit"
+          assert_contains "$SITE_CONF"  "limit_req zone=global_limit"   "global rate-limit applied to server"
+
+          NGINX_T=$(dexec "$CONTAINER_NAME" nginx -t)
+          assert_contains "$NGINX_T" "syntax is ok"       "nginx -t: syntax ok"
+          assert_contains "$NGINX_T" "test is successful" "nginx -t: test successful"
+
+          dexec "$CONTAINER_NAME" sh -c 'echo "<?php phpinfo();" > /site/press/phpinfo.php' >/dev/null
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$BASE_URL/phpinfo.php" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then
+            pass "phpinfo.php blocked with 403"
+          else
+            fail "phpinfo.php should be blocked but returned $HTTP_CODE"
+          fi
+          dexec "$CONTAINER_NAME" rm -f /site/press/phpinfo.php >/dev/null
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Default index served on empty install"
+          # ──────────────────────────────────────────────────────────────────────
+          INDEX_BODY=$(curl -s --max-time 5 "$BASE_URL/" || true)
+          assert_contains "$INDEX_BODY" "PressHost" "homepage renders PressHost"
+          assert_contains "$INDEX_BODY" "PHP:"      "homepage shows PHP version"
+          assert_contains "$INDEX_BODY" "Nginx:"    "homepage shows Nginx version (via NGINX_VERSION env)"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Security headers"
+          # ──────────────────────────────────────────────────────────────────────
+          HEADERS=$(dexec "$CONTAINER_NAME" sh -c "curl -sS -D - -o /dev/null http://localhost")
+          assert_contains "$HEADERS" "X-Content-Type-Options: nosniff"                    "X-Content-Type-Options"
+          assert_contains "$HEADERS" "Referrer-Policy: strict-origin-when-cross-origin"   "Referrer-Policy hardened"
+          assert_contains "$HEADERS" "Permissions-Policy"                                  "Permissions-Policy present"
+          assert_contains "$HEADERS" "Strict-Transport-Security"                           "HSTS"
+          assert_contains "$HEADERS" "Cross-Origin-Opener-Policy"                          "COOP"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "NGINX Cache disabled"
+          # ──────────────────────────────────────────────────────────────────────
+          CACHE_PATH=$(dexec "$CONTAINER_NAME" cat /etc/nginx/conf.d/cache-path.conf)
+          assert_contains "$CACHE_PATH" "Cache - Disabled" "cache-path.conf is disabled by default"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "GZIP and Brotli configurations"
+          # ──────────────────────────────────────────────────────────────────────
+          COMP_CONF=$(dexec "$CONTAINER_NAME" cat /etc/nginx/conf.d/compression.conf)
+          assert_contains "$COMP_CONF" "gzip_static on"      "gzip_static enabled"
+          assert_contains "$COMP_CONF" "brotli_static on"    "brotli_static enabled"
+          assert_contains "$COMP_CONF" "gzip_comp_level 5"   "gzip level from env (5)"
+          assert_contains "$COMP_CONF" "brotli_comp_level 4" "brotli level from env (4)"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Mobile-split cache"
+          # ──────────────────────────────────────────────────────────────────────
+          for split in true false; do
+            TMP_NAME="${CONTAINER_NAME}-mobile-${split}"
+            docker rm -f "$TMP_NAME" 2>/dev/null || true
+            docker run -d --name "$TMP_NAME" \
+              --network "$NETWORK" \
+              -e SITEURL=localhost \
+              -e DB_HOST="$DB_CONTAINER" \
+              -e DB_NAME="$DB_NAME" \
+              -e DB_USER="$DB_USER" \
+              -e DB_PASSWORD="$DB_PASSWORD" \
+              -e NGINX_CACHE=true \
+              -e NGINX_CACHE_SPLIT_MOBILE="$split" \
+              "$IMAGE_NAME" >/dev/null
+            sleep 8
+            CP=$(dexec "$TMP_NAME" cat /etc/nginx/conf.d/cache-path.conf)
+            if [ "$split" = "true" ]; then
+              assert_contains "$CP" 'is_mobile' "cache_key includes is_mobile when split=true"
+            else
+              assert_not_contains "$CP" 'is_mobile' "cache_key excludes is_mobile when split=false"
+            fi
+            docker rm -f "$TMP_NAME" 2>/dev/null || true
+          done
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "PHP configurations"
+          # ──────────────────────────────────────────────────────────────────────
+          POOL=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/pool.d/www.conf")
+          assert_contains    "$POOL" "user = $APP_USER"         "'user' directive drops workers to $APP_USER"
+          assert_contains    "$POOL" "listen.owner = $APP_USER" "FPM socket owned by $APP_USER"
+          assert_contains    "$POOL" "clear_env = yes"          "clear_env is yes"
+          assert_contains    "$POOL" 'env[DB_PASSWORD]'         "DB_PASSWORD forwarded"
+          assert_contains    "$POOL" "env[SITEURL] = \"$BASE_URL\"" "SITEURL forwarded"
+          assert_contains    "$POOL" 'env[PRESS_GOOGLE_KEY]'    "PRESS_* forwarded to PHP"
+          assert_not_contains "$POOL" 'env[NGINX_CACHE]'        "NGINX_* not forwarded to PHP (allow-list)"
+          assert_not_contains "$POOL" 'env[PATH]'               "PATH not forwarded (allow-list)"
+
+          FPM_GLOBAL=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/php-fpm.conf")
+          assert_contains "$FPM_GLOBAL" "emergency_restart_threshold" "emergency_restart_threshold present"
+          assert_contains "$FPM_GLOBAL" "process_control_timeout"     "process_control_timeout present"
+
+          INI=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/conf.d/99-presshost.ini")
+          assert_contains "$INI" "opcache.validate_timestamps = 0" "OPcache validate_timestamps=0"
+          assert_contains "$INI" "disable_functions"               "disable_functions present"
+          assert_contains "$INI" "shell_exec"                      "shell_exec listed in disable_functions"
+
+          PHP_CHECK=$(dexec "$CONTAINER_NAME" php -r \
+            "echo function_exists('shell_exec') && !in_array('shell_exec', explode(',', ini_get('disable_functions'))) ? 'enabled' : 'disabled';")
+          assert_contains "$PHP_CHECK" "disabled" "shell_exec disabled at runtime"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Testing SuperCRONic"
+          # ──────────────────────────────────────────────────────────────────────
+          CRON=$(dexec "$CONTAINER_NAME" cat /etc/presshost/crontab)
+          assert_match "$CRON" '^\* \* \* \* \* /usr/local/bin/wordpress-cron\.sh' "WP-cron entry present"
+          assert_match "$CRON" '^0 0 \* \* \* /usr/local/bin/nginx-reload\.sh'     "nginx-reload entry present"
+          assert_match "$CRON" '^0 4 \* \* \* /usr/sbin/logrotate'                 "daily logrotate entry present"
+
+          WPCRON=$(dexec "$CONTAINER_NAME" cat /usr/local/bin/wordpress-cron.sh)
+          assert_contains "$WPCRON" "runuser -u" "wp-cron drops privileges via runuser"
+
+          SUPERCRONIC_PROC=$(dexec "$CONTAINER_NAME" sh -c "pgrep -af supercronic | head -3")
+          assert_match "$SUPERCRONIC_PROC" 'supercronic' "supercronic daemon is running"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Generated salts"
+          # ──────────────────────────────────────────────────────────────────────
+          SALT_OUT=$(dexec "$CONTAINER_NAME" bash -c \
+            "source /usr/local/bin/common-utils.sh && generate_local_salts /tmp/salts.php && cat /tmp/salts.php && rm -f /tmp/salts.php")
+          assert_contains "$SALT_OUT" "AUTH_KEY"             "AUTH_KEY generated"
+          assert_contains "$SALT_OUT" "NONCE_SALT"           "NONCE_SALT generated"
+          assert_match    "$SALT_OUT" "define\('AUTH_KEY', '" "salt format is define('KEY','VALUE')"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Healthcheck test"
+          # ──────────────────────────────────────────────────────────────────────
+          HC_ALL=$(dexec "$CONTAINER_NAME" /etc/s6-overlay/scripts/healthcheck-all)
+          assert_match "$HC_ALL" '^[[:space:]]*$|healthy' "composite healthcheck returns success"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Install WordPress via WP-CLI"
+          # ──────────────────────────────────────────────────────────────────────
+          dexec "$CONTAINER_NAME" rm -f /site/press/index.php >/dev/null
+
+          DL_OUT=$(dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
+            --path=/site/press core download --force)
+          if echo "$DL_OUT" | grep -q 'Success'; then
+            pass "wp core download succeeded"
+          else
+            fail "wp core download failed"; info "$DL_OUT"
+          fi
+
+          dexec "$CONTAINER_NAME" sh -c \
+            "cp /tmp/wp-config.php /site/press/wp-config.php && \
+             chown ${APP_USER}:${APP_GROUP} /site/press/wp-config.php && \
+             chmod 640 /site/press/wp-config.php" >/dev/null
+
+          dexec "$CONTAINER_NAME" bash -c \
+            "source /usr/local/bin/common-utils.sh && \
+             generate_local_salts /site/press/wp-secrets.php && \
+             chown ${APP_USER}:${APP_GROUP} /site/press/wp-secrets.php && \
+             chmod 640 /site/press/wp-secrets.php" >/dev/null
+
+          INSTALL_OUT=$(dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
+            --path=/site/press core install \
+            "--url=$BASE_URL" \
+            "--title=PressHost Test Site" \
+            "--admin_user=$WP_ADMIN_USER" \
+            "--admin_password=$WP_ADMIN_PASSWORD" \
+            "--admin_email=$WP_ADMIN_EMAIL" \
+            --skip-email)
+          if echo "$INSTALL_OUT" | grep -qE 'WordPress (successfully installed|installed successfully)|Success: WordPress'; then
+            pass "wp core install succeeded"
+          else
+            fail "wp core install failed"; info "$INSTALL_OUT"
+          fi
+
+          dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
+            --path=/site/press cron event schedule presshost_test_event now >/dev/null
+
+          dexec "$CONTAINER_NAME" sh -c 'kill -USR2 $(cat /run/php/php*-fpm.pid)' >/dev/null
+          sleep 3
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "WordPress responds over HTTP/HTTPS"
+          # ──────────────────────────────────────────────────────────────────────
+          WP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 -L "$BASE_URL/" || echo "000")
+          assert_match "$WP_STATUS" '^200$' "GET / returns 200"
+
+          WP_BODY=$(curl -s --max-time 15 -L "$BASE_URL/" || true)
+          if echo "$WP_BODY" | grep -qE 'wp-content|wp-includes|wp-json|<meta name="generator" content="WordPress'; then
+            pass "homepage rendered by WordPress"
+          else
+            fail "homepage does not look like WordPress output"
+            WP_HOME=$(dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
+              --path=/site/press option get home)
+            WP_SITE=$(dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
+              --path=/site/press option get siteurl)
+            info "wp option home: $WP_HOME"
+            info "wp option siteurl: $WP_SITE"
+            info "Response head: ${WP_BODY:0:500}"
+          fi
+
+          WP_LOGIN=$(dexec "$CONTAINER_NAME" sh -c "curl -sS -i -k --http1.1 https://localhost/wp-login.php")
+          assert_match    "$WP_LOGIN" '^HTTP/[0-9.]+ 200' "GET /wp-login.php returns 200"
+          assert_contains "$WP_LOGIN" "user_login"         "wp-login.php renders login form"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Cron: 2-minute watch"
+          # ──────────────────────────────────────────────────────────────────────
+          CRON_LOG_PATH="/site/logs/cron-presshost.log"
+          DEADLINE=$((SECONDS + 125))
+          CRON_FIRED=false
+          CRON_AS_CORRECT_USER=false
+          CRON_SUCCEEDED=false
+
+          while [ $SECONDS -lt $DEADLINE ]; do
+            LAST_LOG=$(dexec "$CONTAINER_NAME" sh -c "cat $CRON_LOG_PATH 2>/dev/null || echo ''")
+            if echo "$LAST_LOG" | grep -qE 'Running WordPress cron events as ([a-zA-Z0-9_-]+)'; then
+              CRON_FIRED=true
+              if echo "$LAST_LOG" | grep -qE "Running WordPress cron events as ${APP_USER}"; then
+                CRON_AS_CORRECT_USER=true
+              fi
+            fi
+            if echo "$LAST_LOG" | grep -q 'WordPress cron events completed successfully'; then
+              CRON_SUCCEEDED=true
+            fi
+            if $CRON_FIRED && $CRON_SUCCEEDED; then break; fi
+            sleep 10
+          done
+
+          $CRON_FIRED         && pass "cron tick observed within 2 minutes"      || fail "cron did not fire within 2 minutes"
+          $CRON_AS_CORRECT_USER && pass "WP-cron executed as $APP_USER"          || fail "WP-cron did not execute as $APP_USER"
+          $CRON_SUCCEEDED       && pass "WP-cron completed successfully"          || fail "WP-cron did not log success"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "No errors in logs during boot"
+          # ──────────────────────────────────────────────────────────────────────
+          BOOT_LOGS=$(docker logs "$CONTAINER_NAME" 2>&1)
+          assert_not_contains "$BOOT_LOGS" "ERROR"             "no ERROR lines in boot logs"
+          assert_not_contains "$BOOT_LOGS" "permission denied" "no permission errors"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          # Summary
+          # ──────────────────────────────────────────────────────────────────────
+          echo ""
+          echo "──────────────────────────────────────────"
+          echo " Passed: $PASS"
+          echo " Failed: $FAIL"
+          echo "──────────────────────────────────────────"
+          if [ $FAIL -gt 0 ]; then
+            echo "Failures:"
+            for f in "${FAILURES[@]}"; do echo "  - $f"; done
+            exit 1
+          fi
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" 2>/dev/null || true
+          docker network rm "$NETWORK" 2>/dev/null || true
