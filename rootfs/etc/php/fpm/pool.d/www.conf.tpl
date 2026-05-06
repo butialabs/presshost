@@ -8,7 +8,7 @@ listen.group = ${APP_GROUP}
 listen.mode = 0660
 listen.backlog = ${PHP_FPM_LISTEN_BACKLOG}
 
-clear_env = ${PHP_CLEAR_ENV}
+clear_env = yes
 
 pm = ${PHP_PM}
 pm.max_children = ${PHP_PM_MAX_CHILDREN}
@@ -31,4 +31,4 @@ decorate_workers_output = no
 php_admin_flag[log_errors] = on
 php_admin_value[error_log] = ${LOGS_PATH}/php-error.log
 slowlog = ${LOGS_PATH}/php-slow.log
-request_slowlog_timeout = 10s
+request_slowlog_timeout = ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT}
