@@ -5,9 +5,8 @@ load_module modules/ngx_http_cache_purge_module.so;
 user ${APP_USER};
 worker_processes auto;
 worker_rlimit_nofile 65535;
-worker_priority -5;
 pid /run/nginx.pid;
-error_log ${LOGS_PATH}/nginx-error.log warn;
+error_log ${LOGS_PATH}/nginx-error.log ${NGINX_LOG_LEVEL};
 
 events {
     multi_accept on;
@@ -30,15 +29,29 @@ http {
     server_names_hash_bucket_size 128;
     server_names_hash_max_size 4096;
 
+    client_body_temp_path /var/lib/nginx/body;
+    proxy_temp_path /var/lib/nginx/proxy;
+    fastcgi_temp_path /var/lib/nginx/fastcgi;
+    uwsgi_temp_path /var/lib/nginx/uwsgi;
+    scgi_temp_path /var/lib/nginx/scgi;
+
+    open_file_cache max=10000 inactive=20s;
+    open_file_cache_valid 30s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+
+    reset_timedout_connection on;
+    client_body_in_single_buffer on;
+
     access_log off;
-    error_log /dev/null;
 
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:100m;
     ssl_session_tickets off;
-    ssl_dhparam /etc/nginx/dhparam.pem;
+    ssl_ecdh_curve X25519:secp384r1;
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
     resolver 1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4 208.67.222.222 208.67.220.220 valid=60s;
     resolver_timeout 2s;
 
@@ -70,6 +83,16 @@ http {
                         'rt=$request_time uct="$upstream_connect_time" '
                         'uht="$upstream_header_time" urt="$upstream_response_time" '
                         'cache=$upstream_cache_status mobile=$is_mobile';
+
+    map $http_x_forwarded_proto $real_scheme {
+        default $scheme;
+        ~. $http_x_forwarded_proto;
+    }
+
+    map $http_x_forwarded_host $real_host {
+        default $host;
+        ~. $http_x_forwarded_host;
+    }
 
     map $http_user_agent $is_mobile {
         default 0;
@@ -114,6 +137,8 @@ http {
         ~*woocommerce_items_in_cart 1;
         ~*woocommerce_cart_hash 1;
         ~*wordpress_no_cache 1;
+        ~*edd_items_in_cart 1;
+        ~*edd_cart 1;
     }
 
     map $request_method $skip_cache_method {
@@ -125,6 +150,13 @@ http {
         default 0;
         ~*1 1;
     }
+
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=xmlrpc_limit:10m rate=1r/s;
+    limit_req_zone $binary_remote_addr zone=global_limit:20m rate=${NGINX_RATE_LIMIT};
+    limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
+    limit_req_status 429;
+    limit_conn_status 429;
 
     include /etc/nginx/conf.d/cache-path.conf;
 

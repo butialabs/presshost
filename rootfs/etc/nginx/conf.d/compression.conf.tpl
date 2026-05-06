@@ -1,7 +1,8 @@
 gzip on;
+gzip_static on;
 gzip_vary on;
 gzip_proxied any;
-gzip_comp_level 6;
+gzip_comp_level ${NGINX_GZIP_COMP_LEVEL};
 gzip_http_version 1.1;
 gzip_min_length 256;
 gzip_types
@@ -34,8 +35,8 @@ gzip_types
     font/woff2;
 
 brotli on;
-brotli_comp_level 6;
 brotli_static on;
+brotli_comp_level ${NGINX_BROTLI_COMP_LEVEL};
 brotli_min_length 256;
 brotli_types
     application/atom+xml

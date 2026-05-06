@@ -13,5 +13,9 @@ location ~ ^/(fpm-status|fpm-ping)$ {
     allow 172.16.0.0/12;
     allow 192.168.0.0/16;
     deny all;
-    fastcgi_pass unix:/var/run/php/php-fpm.sock;
+
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME "";
+    fastcgi_param SCRIPT_NAME     $fastcgi_script_name;
+    fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
 }
