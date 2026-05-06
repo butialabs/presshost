@@ -1,0 +1,5 @@
+[global]
+emergency_restart_threshold = ${PHP_FPM_EMERGENCY_RESTART_THRESHOLD}
+emergency_restart_interval = ${PHP_FPM_EMERGENCY_RESTART_INTERVAL}
+process_control_timeout = ${PHP_FPM_PROCESS_CONTROL_TIMEOUT}
+log_level = ${PHP_FPM_LOG_LEVEL}
