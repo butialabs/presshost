@@ -5,24 +5,21 @@ services:
     container_name: presshost
     restart: unless-stopped
     environment:
-      SITE_URL: your-domain.xyz
+      SITEURL: https://your-domain.xyz
       DB_NAME: presshost
       DB_USER: presshost
       DB_PASSWORD: p@ssw0rd
       DB_HOST: db
-      WP_SITEURL: https://${SITE_URL}
-      WP_HOME: https://${SITE_URL}
       TZ: UTC
-
-      # SSL_CERT_PATH: /site/ssl/live/${SITE_URL}/fullchain.pem
-      # SSL_PRIVATE_PATH: /site/ssl/live/${SITE_URL}/privkey.pem
-      # SSL_TRUSTED_CERT_PATH: /site/ssl/live/${SITE_URL}/chain.pem
+      # SSL_CERT_PATH: /site/ssl/live/your-domain.xyz/fullchain.pem
+      # SSL_PRIVATE_PATH: /site/ssl/live/your-domain.xyz/privkey.pem
+      # SSL_TRUSTED_CERT_PATH: /site/ssl/live/your-domain.xyz/chain.pem
     volumes:
-      - /opt/press:/site/press
-      - /opt/uploads:/site/uploads
-      - /opt/cache:/site/cache
-      - /opt/logs:/site/logs
-      # - /opt/certbot:/site/ssl
+      - ./presshost/press:/site/press
+      - ./presshost/uploads:/site/uploads
+      - ./presshost/cache:/site/cache
+      - ./presshost/logs:/site/logs
+      - ./presshost/ssl:/site/ssl # or if use certbot ./presshost/certbot:/site/ssl
     networks:
       - presshost
     ports:
@@ -47,11 +44,9 @@ services:
       MYSQL_USER: presshost
       MYSQL_PASSWORD: p@ssw0rd
     volumes:
-      - /opt/db/data:/var/lib/mysql
+      - ./presshost/db/data:/var/lib/mysql
     networks:
       - presshost
-    ports:
-      - 3306:3306
     logging:
       driver: json-file
       options:
@@ -64,13 +59,13 @@ services:
     container_name: certbot
     restart: unless-stopped
     volumes:
-      - /opt/certbot:/config
+      - ./presshost/certbot:/config
     environment:
-      - EMAIL: tecnologia@${SITE_URL}
-      - DOMAINS: ${SITE_URL},www.${SITE_URL}
-      - PLUGIN: cloudflare
-      - INTERVAL: 0 0 1 * *
-      - CLOUDFLARE_TOKEN: null
+      EMAIL: tecnologia@your-domain.xyz
+      DOMAINS: your-domain.xyz,www.your-domain.xyz
+      PLUGIN: cloudflare
+      INTERVAL: 0 0 1 * *
+      CLOUDFLARE_TOKEN: p@ssw0rd
 
 networks:
   presshost:
