@@ -22,7 +22,7 @@ if (!function_exists('getenv_docker')) {
     }
 }
 
-defined('WP_CLI') || define('WP_CLI', defined('WP_CLI') && WP_CLI);
+defined('WP_CLI') || define('WP_CLI', false);
 if (WP_CLI) {
     $_SERVER['HTTP_HOST'] = parse_url(getenv_docker('WP_SITEURL'), PHP_URL_HOST);
 }
@@ -44,12 +44,20 @@ foreach ($required_vars as $var) {
 }
 
 define('WP_DEBUG', getenv_docker('WP_DEBUG', false, FILTER_VALIDATE_BOOLEAN));
-define('WP_DEBUG_LOG', getenv_docker('WP_DEBUG_LOG', false, FILTER_VALIDATE_BOOLEAN));
+define('WP_DEBUG_LOG', getenv_docker('WP_DEBUG_LOG', false, FILTER_VALIDATE_BOOLEAN)
+    ? rtrim(getenv_docker('LOGS_PATH', '/site/logs'), '/') . '/wp-debug.log'
+    : false);
 define('WP_DEBUG_DISPLAY', getenv_docker('WP_DEBUG_DISPLAY', false, FILTER_VALIDATE_BOOLEAN));
 define('SAVEQUERIES', getenv_docker('SAVEQUERIES', false, FILTER_VALIDATE_BOOLEAN));
 
-define('WP_SITEURL', getenv_docker('WP_SITEURL', ''));
-define('WP_HOME', getenv_docker('WP_HOME', ''));
+$presshost_siteurl = getenv_docker('SITEURL', '');
+if (!empty($presshost_siteurl) && strpos($presshost_siteurl, '://') === false) {
+    $presshost_siteurl = 'https://' . ltrim($presshost_siteurl, '/');
+}
+$presshost_wp_siteurl = getenv_docker('WP_SITEURL', '');
+$presshost_wp_home = getenv_docker('WP_HOME', '');
+define('WP_SITEURL', !empty($presshost_wp_siteurl) ? $presshost_wp_siteurl : $presshost_siteurl);
+define('WP_HOME', !empty($presshost_wp_home) ? $presshost_wp_home : $presshost_siteurl);
 define('AUTOMATIC_UPDATER_DISABLED', getenv_docker('AUTOMATIC_UPDATER_DISABLED', false, FILTER_VALIDATE_BOOLEAN));
 define('DISABLE_WP_CRON', getenv_docker('DISABLE_WP_CRON', true, FILTER_VALIDATE_BOOLEAN));
 define('DISALLOW_FILE_EDIT', getenv_docker('DISALLOW_FILE_EDIT', false, FILTER_VALIDATE_BOOLEAN));
@@ -90,8 +98,8 @@ if (file_exists(ABSPATH . 'wp-secrets.php')) {
     define('NONCE_SALT', getenv_docker('NONCE_SALT', ''));
 }
 
-foreach (array_merge(getenv(), $_ENV) as $key => $value) {
-    if (strpos($key, 'PRESS_') === 0 && $value !== false && $value !== '') {
+foreach (getenv() as $key => $value) {
+    if (strpos($key, 'PRESS_') === 0 && $value !== '') {
         $constant_name = substr($key, 6);
         if (!defined($constant_name)) {
             $lower_value = strtolower($value);

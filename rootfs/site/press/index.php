@@ -1,27 +1,11 @@
 <?php
-
-function get_nginx_version()
-{
-    $output = @shell_exec('nginx -v 2>&1');
-    if (preg_match('/nginx\/([0-9.]+)/', $output, $matches)) {
-        return $matches[1];
-    }
-    return 'N/A';
+$nginx_version = getenv('NGINX_VERSION');
+if (preg_match('/^[0-9]+(?:\.[0-9]+){1,2}/', $nginx_version, $m)) {
+    $nginx_version = $m[0];
 }
-
-function get_kernel_version()
-{
-    return php_uname('r');
-}
-
-function get_process_count()
-{
-    if (PHP_OS_FAMILY === 'Linux') {
-        $count = @shell_exec('ps aux | wc -l');
-        return $count ? trim($count) : 'N/A';
-    }
-    return 'N/A';
-}
+$load = sys_getloadavg();
+$load_avg = sprintf('%.2f, %.2f, %.2f', $load[0], $load[1], $load[2]);
+$process_count = count(glob('/proc/[0-9]*'));
 ?>
 <!DOCTYPE html>
 <html>
@@ -82,14 +66,15 @@ function get_process_count()
         </header>
         <h3 class="fs-6 mt-4">[?] Server Stats</h3>
         <ul>
-            <li><strong>Hostname:</strong> <?= gethostname() ?></li>
-            <li><strong>OS:</strong> <?= PHP_OS ?> (<?= php_uname('m') ?>)</li>
-            <li><strong>Kernel:</strong> <?= get_kernel_version() ?></li>
-            <li><strong>PHP:</strong> <?= PHP_VERSION ?></li>
-            <li><strong>Nginx:</strong> <?= get_nginx_version() ?></li>
-            <li><strong>Processes:</strong> <?= get_process_count() ?></li>
-            <li><strong>Server IP:</strong> <?= $_SERVER['SERVER_ADDR'] ?? gethostbyname(gethostname()) ?></li>
-            <li><strong>Server Time:</strong> <?= date('Y-m-d H:i:s T') ?></li>
+            <li><strong>Hostname:</strong> <?= htmlspecialchars(gethostname(), ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>OS:</strong> <?= htmlspecialchars(PHP_OS, ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars(php_uname('m'), ENT_QUOTES, 'UTF-8') ?>)</li>
+            <li><strong>Kernel:</strong> <?= htmlspecialchars(php_uname('r'), ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>PHP:</strong> <?= htmlspecialchars(PHP_VERSION, ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>Nginx:</strong> <?= htmlspecialchars($nginx_version, ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>Processes:</strong> <?= $process_count ?></li>
+            <li><strong>Load Avg:</strong> <?= htmlspecialchars($load_avg, ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>Server IP:</strong> <?= htmlspecialchars($_SERVER['SERVER_ADDR'], ENT_QUOTES, 'UTF-8') ?></li>
+            <li><strong>Server Time:</strong> <?= htmlspecialchars(date('Y-m-d H:i:s T'), ENT_QUOTES, 'UTF-8') ?></li>
         </ul>
         <p>$<span class="blink">_</span></p>
     </div>
