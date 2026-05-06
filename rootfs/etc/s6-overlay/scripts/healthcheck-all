@@ -1,0 +1,17 @@
+#!/bin/bash
+set -uo pipefail
+
+# Composite healthcheck used by HEALTHCHECK in Dockerfile.
+# Validates that NGINX answers AND PHP-FPM ping responds.
+
+if ! /etc/s6-overlay/scripts/healthcheck-nginx >/dev/null 2>&1; then
+    echo "[ERROR] nginx unhealthy" >&2
+    exit 1
+fi
+
+if ! /etc/s6-overlay/scripts/healthcheck-php-fpm >/dev/null 2>&1; then
+    echo "[ERROR] php-fpm unhealthy" >&2
+    exit 1
+fi
+
+exit 0

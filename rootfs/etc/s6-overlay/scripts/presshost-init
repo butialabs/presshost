@@ -1,29 +1,203 @@
 #!/bin/bash
-set -e
+set -uo pipefail
 
 source /usr/local/bin/common-utils.sh
 
 info "Starting PressHost initialization..."
 
-# Process templates
-info "Starting template processing..."
+# Map LOG_LEVEL (ERROR|WARN|INFO|DEBUG|TRACE) onto nginx and php-fpm scales.
+case "${LOG_LEVEL^^}" in
+    ERROR) NGINX_LOG_LEVEL=error;  PHP_FPM_LOG_LEVEL=error ;;
+    WARN)  NGINX_LOG_LEVEL=warn;   PHP_FPM_LOG_LEVEL=warning ;;
+    INFO)  NGINX_LOG_LEVEL=notice; PHP_FPM_LOG_LEVEL=notice ;;
+    DEBUG) NGINX_LOG_LEVEL=info;   PHP_FPM_LOG_LEVEL=notice ;;
+    TRACE) NGINX_LOG_LEVEL=debug;  PHP_FPM_LOG_LEVEL=debug ;;
+esac
+export NGINX_LOG_LEVEL PHP_FPM_LOG_LEVEL
 
-if [ "${ALLOW_RUNTIME_PHP_ENVVARS}" = "true" ]; then
-    export PHP_CLEAR_ENV="no"
-else
-    export PHP_CLEAR_ENV="yes"
+# SITEURL
+SITEURL="${SITEURL:-}"
+
+derive_host_from_url() {
+    local url="$1"
+    url="${url#http://}"
+    url="${url#https://}"
+    url="${url%%/*}"
+    url="${url%%\?*}"
+    url="${url%%:*}"
+    echo "$url"
+}
+
+if [[ -n "$SITEURL" ]]; then
+    SITEURL_HOST=$(derive_host_from_url "$SITEURL")
+    if [[ "$SITEURL" != http://* && "$SITEURL" != https://* ]]; then
+        SITEURL_FULL="https://${SITEURL}"
+    else
+        SITEURL_FULL="$SITEURL"
+    fi
+
+    : "${WP_SITEURL:=$SITEURL_FULL}"
+    : "${WP_HOME:=$SITEURL_FULL}"
+    : "${NGINX_SERVER_NAME:=${SITEURL_HOST}}"
+    export WP_SITEURL WP_HOME NGINX_SERVER_NAME
 fi
 
-if [ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]; then
+export NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-_}"
+
+# Cache key suffix for mobile split
+NGINX_CACHE_SPLIT_MOBILE="${NGINX_CACHE_SPLIT_MOBILE:-false}"
+if [[ "$NGINX_CACHE_SPLIT_MOBILE" == "true" ]]; then
+    export NGINX_CACHE_KEY_MOBILE_SUFFIX='$is_mobile'
+else
+    export NGINX_CACHE_KEY_MOBILE_SUFFIX=""
+fi
+
+# HTTP/3 (QUIC)
+NGINX_HTTP3="${NGINX_HTTP3:-false}"
+NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-8443}"
+if [[ "$NGINX_HTTP3" == "true" ]]; then
+    export NGINX_HTTP3_LISTEN="listen ${NGINX_HTTPS_PORT} quic reuseport;
+    listen [::]:${NGINX_HTTPS_PORT} quic reuseport;
+    http3 on;"
+    export NGINX_HTTP3_HEADER="add_header Alt-Svc \"h3=\\\":${NGINX_HTTPS_PORT}\\\"; ma=86400\" always;"
+else
+    export NGINX_HTTP3_LISTEN=""
+    export NGINX_HTTP3_HEADER=""
+fi
+
+# Compression levels
+export NGINX_GZIP_COMP_LEVEL="${NGINX_GZIP_COMP_LEVEL:-6}"
+export NGINX_BROTLI_COMP_LEVEL="${NGINX_BROTLI_COMP_LEVEL:-4}"
+
+# PHP disable_functions 
+export PHP_DISABLE_FUNCTIONS="${PHP_DISABLE_FUNCTIONS:-exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec}"
+
+# Auto Configurations
+get_mem_limit_mb() {
+    local v
+    if [[ -r /sys/fs/cgroup/memory.max ]]; then
+        v=$(cat /sys/fs/cgroup/memory.max)
+        if [[ "$v" =~ ^[0-9]+$ ]]; then
+            echo $(( v / 1024 / 1024 ))
+            return
+        fi
+    fi
+    awk '/^MemTotal:/ {print int($2/1024); exit}' /proc/meminfo
+}
+
+MEM_LIMIT_MB=$(get_mem_limit_mb)
+
+if [[ "${PHP_PM_MAX_CHILDREN:-}" == "auto" ]]; then
+    worker_mb=128
+    reserve_mb=512
+    usable=$(( MEM_LIMIT_MB - reserve_mb ))
+    (( usable < worker_mb )) && usable=$worker_mb
+    PHP_PM_MAX_CHILDREN=$(( usable / worker_mb ))
+    (( PHP_PM_MAX_CHILDREN < 4 )) && PHP_PM_MAX_CHILDREN=4
+    (( PHP_PM_MAX_CHILDREN > 200 )) && PHP_PM_MAX_CHILDREN=200
+    info "Auto-calculated PHP_PM_MAX_CHILDREN=${PHP_PM_MAX_CHILDREN}"
+fi
+export PHP_PM_MAX_CHILDREN
+
+if [[ "${PHP_PM:-}" == "auto" ]]; then
+    if (( MEM_LIMIT_MB <= 2048 )); then
+        PHP_PM=static
+    else
+        PHP_PM=dynamic
+    fi
+    info "Auto-selected PHP_PM=${PHP_PM} (memory ${MEM_LIMIT_MB}MB)"
+fi
+export PHP_PM
+
+if [[ "${PHP_PM_START_SERVERS:-0}" -gt "${PHP_PM_MAX_CHILDREN:-50}" ]]; then
+    PHP_PM_START_SERVERS="${PHP_PM_MAX_CHILDREN}"
+    PHP_PM_MIN_SPARE_SERVERS="${PHP_PM_MAX_CHILDREN}"
+    PHP_PM_MAX_SPARE_SERVERS="${PHP_PM_MAX_CHILDREN}"
+    export PHP_PM_START_SERVERS PHP_PM_MIN_SPARE_SERVERS PHP_PM_MAX_SPARE_SERVERS
+fi
+
+build_pool_env_block() {
+    local exact_keys=(
+        DB_NAME DB_USER DB_PASSWORD DB_HOST DB_CHARSET DB_COLLATE
+        WP_SITEURL WP_HOME WP_ENVIRONMENT_TYPE WP_DEBUG WP_DEBUG_LOG WP_DEBUG_DISPLAY
+        WP_MEMORY_LIMIT WP_MAX_MEMORY_LIMIT WP_CACHE WP_CACHE_KEY_SALT WP_POST_REVISIONS
+        WPLANG FS_METHOD FORCE_SSL_ADMIN FORCE_SSL_LOGIN
+        AUTOSAVE_INTERVAL MEDIA_TRASH DISABLE_NAG_NOTICES DISABLE_WP_CRON
+        DISALLOW_FILE_EDIT DISALLOW_FILE_MODS AUTOMATIC_UPDATER_DISABLED SAVEQUERIES
+        SMTP_USER SMTP_PASS SMTP_HOST SMTP_FROM SMTP_NAME SMTP_PORT SMTP_SECURE SMTP_AUTH SMTP_DEBUG
+        AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY
+        AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT
+        SITEURL TZ
+    )
+    local key value seen_keys=":"
+
+    for key in "${exact_keys[@]}"; do
+        value="${!key:-}"
+        seen_keys+="${key}:"
+        if [[ -n "$value" ]]; then
+            value="${value//\"/\\\"}"
+            printf 'env[%s] = "%s"\n' "$key" "$value"
+        fi
+    done
+
+    # Forward all PRESS_* and INSTALL_* vars (constants for wp-config.php)
+    while IFS='=' read -r key value; do
+        [[ -z "$key" ]] && continue
+        case "$key" in
+            PRESS_*|INSTALL_*) ;;
+            *) continue ;;
+        esac
+        case "$seen_keys" in
+            *":${key}:"*) continue ;;
+        esac
+        seen_keys+="${key}:"
+        value="${value//\"/\\\"}"
+        printf 'env[%s] = "%s"\n' "$key" "$value"
+    done < <(env)
+}
+
+info "Starting template processing..."
+
+if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
     info "PHP-FPM config..."
-    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_CLEAR_ENV} ${PHP_VERSION}' \
+    POOL_ENV_BLOCK=$(build_pool_env_block)
+    export POOL_ENV_BLOCK
+    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION}' \
     < /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
     > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+
+    if [[ "${PHP_PM}" == "static" ]]; then
+        sed -i -E '/^pm\.(start_servers|min_spare_servers|max_spare_servers|process_idle_timeout)\s*=/d' \
+            /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+    fi
+
+    {
+        printf '\n; ─── env allow-list (generated by presshost-init) ───\n'
+        printf '%s\n' "$POOL_ENV_BLOCK"
+    } >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
     rm -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
 fi
 
-if [ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]; then
-    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APC_ENABLED} ${PHP_APC_SHM_SIZE} ${PHP_APC_TTL} ${PHP_APC_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL}' \
+# Send the FPM master error log to ${LOGS_PATH} so it lives next to the rest of
+# the application logs, and let our emergency-restart [global] block control
+# log_level instead of the stock value.
+if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf ]]; then
+    sed -i -E "s|^error_log\s*=.*|error_log = ${LOGS_PATH}/php-fpm.log|" \
+        /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
+    sed -i -E '/^log_level\s*=/d' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
+fi
+
+# FPM emergency-restart
+if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl ]]; then
+    info "PHP-FPM emergency-restart config..."
+    envsubst '${PHP_FPM_EMERGENCY_RESTART_THRESHOLD} ${PHP_FPM_EMERGENCY_RESTART_INTERVAL} ${PHP_FPM_PROCESS_CONTROL_TIMEOUT} ${PHP_FPM_LOG_LEVEL}' \
+        < /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl \
+        >> /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
+    rm -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl
+fi
+
+if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
+    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APC_ENABLED} ${PHP_APC_SHM_SIZE} ${PHP_APC_TTL} ${PHP_APC_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS}' \
     < /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
     > /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
 
@@ -31,24 +205,58 @@ if [ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]; then
     rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
 
-if [ -f /etc/nginx/nginx.conf.tpl ]; then
+# Self-signed SSL cert
+if [[ ! -f "${SSL_CERT_PATH}" ]] || [[ ! -f "${SSL_PRIVATE_PATH}" ]]; then
+    info "Generating self-signed SSL certificate at ${SSL_CERT_PATH}..."
+    mkdir -p "$(dirname "${SSL_CERT_PATH}")" "$(dirname "${SSL_PRIVATE_PATH}")"
+    SSL_CN="${NGINX_SERVER_NAME}"
+    [[ -z "${SSL_CN}" || "${SSL_CN}" == "_" ]] && SSL_CN="presshost.local"
+    if openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout "${SSL_PRIVATE_PATH}" \
+            -out "${SSL_CERT_PATH}" \
+            -days 3650 \
+            -subj "/CN=${SSL_CN}" \
+            -addext "subjectAltName=DNS:${SSL_CN},DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1; then
+        chmod 600 "${SSL_PRIVATE_PATH}" 2>/dev/null || true
+        chmod 644 "${SSL_CERT_PATH}" 2>/dev/null || true
+        info "Self-signed certificate generated for CN=${SSL_CN} (valid 10 years)"
+    else
+        warning "Failed to generate self-signed certificate; nginx will fail to start unless ${SSL_CERT_PATH} and ${SSL_PRIVATE_PATH} are provided"
+    fi
+fi
+
+if [[ -f /etc/nginx/nginx.conf.tpl ]]; then
     info "NGINX config..."
-    envsubst '${APP_USER} ${LOGS_PATH} ${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_CLIENT_BODY_BUFFER_SIZE} ${NGINX_CLIENT_HEADER_BUFFER_SIZE} ${NGINX_LARGE_CLIENT_HEADER_BUFFERS} ${NGINX_OUTPUT_BUFFERS} ${NGINX_KEEPALIVE_TIMEOUT} ${NGINX_KEEPALIVE_REQUESTS} ${NGINX_CLIENT_BODY_TIMEOUT} ${NGINX_CLIENT_HEADER_TIMEOUT} ${NGINX_SEND_TIMEOUT} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE}' \
+    envsubst '${APP_USER} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_CLIENT_BODY_BUFFER_SIZE} ${NGINX_CLIENT_HEADER_BUFFER_SIZE} ${NGINX_LARGE_CLIENT_HEADER_BUFFERS} ${NGINX_OUTPUT_BUFFERS} ${NGINX_KEEPALIVE_TIMEOUT} ${NGINX_KEEPALIVE_REQUESTS} ${NGINX_CLIENT_BODY_TIMEOUT} ${NGINX_CLIENT_HEADER_TIMEOUT} ${NGINX_SEND_TIMEOUT} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_RATE_LIMIT}' \
     < /etc/nginx/nginx.conf.tpl \
     > /etc/nginx/nginx.conf
     rm -f /etc/nginx/nginx.conf.tpl
 fi
 
-if [ -f /etc/nginx/sites-enabled/presshost.conf.tpl ]; then
-    envsubst '${APP_PATH} ${LOGS_PATH} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION}' \
+if [[ -f /etc/nginx/sites-enabled/presshost.conf.tpl ]]; then
+    envsubst '${APP_PATH} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION} ${NGINX_SERVER_NAME} ${NGINX_HTTP3_LISTEN} ${NGINX_HTTP3_HEADER} ${NGINX_RATE_BURST} ${NGINX_CONN_LIMIT} ${NGINX_HTTP_PORT} ${NGINX_HTTPS_PORT}' \
     < /etc/nginx/sites-enabled/presshost.conf.tpl \
     > /etc/nginx/sites-enabled/presshost.conf
     rm -f /etc/nginx/sites-enabled/presshost.conf.tpl
 fi
 
-if [ -f /etc/nginx/conf.d/cache-path.conf.tpl ]; then
-    if [ "${NGINX_CACHE}" = "true" ]; then
-        envsubst '${CACHE_PATH} ${NGINX_CACHE_MAX_SIZE} ${NGINX_CACHE_INACTIVE}' \
+if [[ -f /etc/nginx/conf.d/compression.conf.tpl ]]; then
+    envsubst '${NGINX_GZIP_COMP_LEVEL} ${NGINX_BROTLI_COMP_LEVEL}' \
+    < /etc/nginx/conf.d/compression.conf.tpl \
+    > /etc/nginx/conf.d/compression.conf
+    rm -f /etc/nginx/conf.d/compression.conf.tpl
+fi
+
+if [[ -f /etc/nginx/conf.d/status.conf.tpl ]]; then
+    envsubst '${PHP_VERSION}' \
+    < /etc/nginx/conf.d/status.conf.tpl \
+    > /etc/nginx/conf.d/status.conf
+    rm -f /etc/nginx/conf.d/status.conf.tpl
+fi
+
+if [[ -f /etc/nginx/conf.d/cache-path.conf.tpl ]]; then
+    if [[ "${NGINX_CACHE:-false}" == "true" ]]; then
+        envsubst '${CACHE_PATH} ${NGINX_CACHE_MAX_SIZE} ${NGINX_CACHE_INACTIVE} ${NGINX_CACHE_KEY_MOBILE_SUFFIX}' \
         < /etc/nginx/conf.d/cache-path.conf.tpl \
         > /etc/nginx/conf.d/cache-path.conf
     else
@@ -56,11 +264,12 @@ if [ -f /etc/nginx/conf.d/cache-path.conf.tpl ]; then
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-path.conf
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-purge.conf
     fi
+    rm -f /etc/nginx/conf.d/cache-path.conf.tpl
 fi
 
-if [ -f /etc/logrotate.d/presshost.tpl ]; then
+if [[ -f /etc/logrotate.d/presshost.tpl ]]; then
     info "logrotate config..."
-    envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE}' \
+    envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE} ${APP_USER} ${APP_GROUP}' \
     < /etc/logrotate.d/presshost.tpl \
     > /etc/logrotate.d/presshost
     rm -f /etc/logrotate.d/presshost.tpl
@@ -69,51 +278,48 @@ fi
 # Runtime directories
 info "Setting up runtime directories..."
 mkdir -p /run/nginx /run/php
-fast-chown /run/php /run/nginx
 
 # Default index.php for empty installations
-if [ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]; then
+if [[ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]]; then
     info "Empty installation directory detected at ${APP_PATH}"
-    if [ -f "/tmp/index.php" ]; then
+    if [[ -f /tmp/index.php ]]; then
         cp /tmp/index.php "${APP_PATH}/index.php"
-        fast-chown "${APP_PATH}/index.php"
         info "Default index.php copied to ${APP_PATH}"
     else
         warning "Default index.php not found at /tmp/index.php"
     fi
 fi
 
-# Fix ownership
-fast-chown ${APP_PATH}
-
 # WordPress cache symlink
-if [ -d "${APP_PATH}/wp-content" ]; then
-    if [ -d "${APP_PATH}/wp-content/cache" ] && [ ! -L "${APP_PATH}/wp-content/cache" ]; then
-        if [ "$(ls -A ${APP_PATH}/wp-content/cache 2>/dev/null)" ]; then
+if [[ -d "${APP_PATH}/wp-content" ]]; then
+    if [[ -d "${APP_PATH}/wp-content/cache" ]] && [[ ! -L "${APP_PATH}/wp-content/cache" ]]; then
+        if [[ -n "$(ls -A "${APP_PATH}/wp-content/cache" 2>/dev/null)" ]]; then
+            mkdir -p "${CACHE_PATH}/press"
             cp -a "${APP_PATH}/wp-content/cache/." "${CACHE_PATH}/press"
         fi
         rm -rf "${APP_PATH}/wp-content/cache"
     fi
-    
-    if [ -L "${APP_PATH}/wp-content/cache" ]; then
+
+    if [[ -L "${APP_PATH}/wp-content/cache" ]]; then
         rm -f "${APP_PATH}/wp-content/cache"
     fi
 
+    mkdir -p "${CACHE_PATH}/press"
     ln -sf "${CACHE_PATH}/press" "${APP_PATH}/wp-content/cache"
     info "Cache symlink created"
 fi
 
 # WordPress uploads symlink
-if [ -d "${APP_PATH}/wp-content" ]; then
-    if [ -d "${APP_PATH}/wp-content/uploads" ] && [ ! -L "${APP_PATH}/wp-content/uploads" ]; then
+if [[ -d "${APP_PATH}/wp-content" ]]; then
+    if [[ -d "${APP_PATH}/wp-content/uploads" ]] && [[ ! -L "${APP_PATH}/wp-content/uploads" ]]; then
         mkdir -p "${UPLOADS_PATH}"
-        if [ "$(ls -A ${APP_PATH}/wp-content/uploads 2>/dev/null)" ]; then
+        if [[ -n "$(ls -A "${APP_PATH}/wp-content/uploads" 2>/dev/null)" ]]; then
             cp -a "${APP_PATH}/wp-content/uploads/." "${UPLOADS_PATH}/"
         fi
         rm -rf "${APP_PATH}/wp-content/uploads"
     fi
-    
-    if [ -L "${APP_PATH}/wp-content/uploads" ]; then
+
+    if [[ -L "${APP_PATH}/wp-content/uploads" ]]; then
         rm -f "${APP_PATH}/wp-content/uploads"
     fi
 
@@ -122,3 +328,4 @@ if [ -d "${APP_PATH}/wp-content" ]; then
 fi
 
 info "PressHost initialization complete!"
+exit 0

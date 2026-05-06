@@ -1,17 +1,14 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Check if nginx is running
 if ! pgrep -x "nginx" > /dev/null; then
     echo "[ERROR] $(date -Iseconds) - nginx is not running"
     exit 1
 fi
 
-# Check if nginx is responding
-if ! curl -s --fail http://localhost/status > /dev/null; then
+if ! curl -s --fail "http://localhost:${NGINX_HTTP_PORT}/nginx-status" > /dev/null; then
     echo "[ERROR] $(date -Iseconds) - nginx is not responding"
     exit 1
 fi
 
 echo "[INFO] $(date -Iseconds) - nginx is healthy"
-exit 0
