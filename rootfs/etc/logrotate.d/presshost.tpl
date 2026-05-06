@@ -8,5 +8,5 @@ ${LOGS_PATH}/*.log {
     copytruncate
     dateext
     dateformat -%Y%m%d
-    create 644 ${APP_USER} ${APP_GROUP}
+    create 640 ${APP_USER} ${APP_GROUP}
 }
