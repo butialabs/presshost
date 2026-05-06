@@ -1,10 +1,9 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_NAME="PRESSHOST"
-source "/usr/local/bin/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
+source "/usr/local/bin/common-utils.sh"
 
-readonly MENU_HEIGHT=10
 WHIPTAIL_BACKTITLE="PressHost"
 
 input_site_url() {
@@ -231,7 +230,7 @@ show_main_menu() {
             "1" "View installation info" \
             "2" "Exit" \
             3>&1 1>&2 2>&3) || return 255
-        
+
         echo "$choice"
     else
         local choice
@@ -293,13 +292,9 @@ show_installation_info() {
         return 1
     fi
     
-    local site_url="unknown"
-    local site_title="unknown"
-    
-    if command -v wp >/dev/null 2>&1; then
-        site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
-        site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
-    fi
+    local site_url site_title
+    site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+    site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
     
     calc_dialog_size 18 70
     
@@ -343,20 +338,7 @@ find_extracted_dir() {
 }
 
 make_temp_dir() {
-    local prefix="$1"
-    local temp_dir=""
-
-    if command -v mktemp >/dev/null 2>&1; then
-        temp_dir=$(mktemp -d "/tmp/${prefix}.XXXXXX" 2>/dev/null || true)
-    fi
-
-    if [[ -z "$temp_dir" ]]; then
-        temp_dir="/tmp/${prefix}_$$"
-        rm -rf "$temp_dir" 2>/dev/null || true
-        mkdir -p "$temp_dir"
-    fi
-
-    echo "$temp_dir"
+    mktemp -d "/tmp/$1.XXXXXX"
 }
 
 get_press_download_url() {
@@ -613,50 +595,29 @@ run_installation_with_progress() {
     return 1
 }
 
-install_wordpress() {
-    if verify_press_installation; then
-        show_whiptail_error "${PRESS_TYPE} is already installed.\nInstallation cancelled."
-        return 1
-    fi
-    
-    if ! get_installation_params "WordPress"; then
-        show_whiptail_info "Installation cancelled."
-        return 1
-    fi
-    
-    if run_installation_with_progress "WordPress" "wordpress"; then
-        local success_msg="WordPress installation completed successfully!\n\nURL: $INSTALL_URL\nAdmin: ${INSTALL_URL%/}/wp-admin/\nUsername: $INSTALL_USER"
-        if [[ -n "$GENERATED_PASSWORD" ]]; then
-            success_msg="$success_msg\nPassword: $GENERATED_PASSWORD\n\n⚠ SAVE THIS PASSWORD NOW!"
-        fi
-        show_whiptail_success "$success_msg" "Installation Complete"
-        return 0
-    else
-        show_whiptail_error "WordPress installation failed." "Installation Failed"
-        return 1
-    fi
-}
+install_press_ui() {
+    local press_name="$1"   # "WordPress" or "ClassicPress"
+    local press_target="$2" # "wordpress" or "classicpress"
 
-install_classicpress() {
     if verify_press_installation; then
         show_whiptail_error "${PRESS_TYPE} is already installed.\nInstallation cancelled."
         return 1
     fi
-    
-    if ! get_installation_params "ClassicPress"; then
+
+    if ! get_installation_params "$press_name"; then
         show_whiptail_info "Installation cancelled."
         return 1
     fi
-    
-    if run_installation_with_progress "ClassicPress" "classicpress"; then
-        local success_msg="ClassicPress installation completed successfully!\n\nURL: $INSTALL_URL\nAdmin: ${INSTALL_URL%/}/wp-admin/\nUsername: $INSTALL_USER"
+
+    if run_installation_with_progress "$press_name" "$press_target"; then
+        local success_msg="${press_name} installation completed successfully!\n\nURL: $INSTALL_URL\nAdmin: ${INSTALL_URL%/}/wp-admin/\nUsername: $INSTALL_USER"
         if [[ -n "$GENERATED_PASSWORD" ]]; then
             success_msg="$success_msg\nPassword: $GENERATED_PASSWORD\n\n⚠ SAVE THIS PASSWORD NOW!"
         fi
         show_whiptail_success "$success_msg" "Installation Complete"
         return 0
     else
-        show_whiptail_error "ClassicPress installation failed." "Installation Failed"
+        show_whiptail_error "${press_name} installation failed." "Installation Failed"
         return 1
     fi
 }
@@ -666,12 +627,12 @@ main_menu() {
         case "${PRESSHOST_DEFAULT_ACTION:-}" in
             wordpress)
                 unset PRESSHOST_DEFAULT_ACTION
-                install_wordpress
+                install_press_ui "WordPress" "wordpress"
                 return $?
                 ;;
             classicpress)
                 unset PRESSHOST_DEFAULT_ACTION
-                install_classicpress
+                install_press_ui "ClassicPress" "classicpress"
                 return $?
                 ;;
         esac
@@ -694,8 +655,8 @@ main_menu() {
             esac
         else
             case "$choice" in
-                1) install_wordpress ;;
-                2) install_classicpress ;;
+                1) install_press_ui "WordPress" "wordpress" ;;
+                2) install_press_ui "ClassicPress" "classicpress" ;;
                 3) break ;;
                 *) ;;
             esac
@@ -706,7 +667,82 @@ main_menu() {
     echo "Thank you for using PressHost!"
 }
 
+fix_perms() {
+    local target_user="${APP_USER:-www-data}"
+    local target_group="${APP_GROUP:-www-data}"
+
+    info "Repairing ownership and permissions on PressHost volumes"
+    info "Target: ${target_user}:${target_group}"
+
+    if [[ "$(id -u)" != "0" ]]; then
+        error "fix-perms must be executed as root"
+        error "Re-run with: docker exec <container> presshost fix-perms"
+        return 1
+    fi
+
+    local paths=(
+        "${APP_PATH:-/site/press}"
+        "${UPLOADS_PATH:-/site/uploads}"
+        "${CACHE_PATH:-/site/cache}"
+        "${LOGS_PATH:-/site/logs}"
+    )
+
+    local rc=0
+    for p in "${paths[@]}"; do
+        if [[ ! -d "$p" ]]; then
+            info "Skipping ${p} (not a directory)"
+            continue
+        fi
+        info "Processing ${p}..."
+        if ! chown -R "${target_user}:${target_group}" "$p"; then
+            error "chown failed on ${p}"
+            rc=1
+        fi
+        find "$p" -type d -exec chmod 755 {} + 2>/dev/null || true
+        find "$p" -type f -exec chmod 644 {} + 2>/dev/null || true
+    done
+
+    # Sensitive files: tighter perms.
+    local press_dir="${APP_PATH:-/site/press}"
+    for sensitive in "${press_dir}/wp-config.php" "${press_dir}/wp-secrets.php"; do
+        if [[ -f "$sensitive" ]]; then
+            chmod 640 "$sensitive" 2>/dev/null || true
+            info "Locked down ${sensitive} (640)"
+        fi
+    done
+
+    local logs_dir="${LOGS_PATH:-/site/logs}"
+    if [[ -d "$logs_dir" ]]; then
+        chmod 750 "$logs_dir" 2>/dev/null || true
+        find "$logs_dir" -type f -exec chmod 640 {} + 2>/dev/null || true
+        info "Locked down ${logs_dir} (dir 750, files 640)"
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        success "Permission fix complete"
+    else
+        error "Permission fix completed with errors"
+    fi
+    return $rc
+}
+
 main() {
+    if [[ $# -gt 0 ]]; then
+        case "$1" in
+            -h|--help|help)
+                cat <<'EOF'
+Usage: presshost              Run interactive installer/menu
+       presshost fix-perms    Reset owner+permissions on /site/{press,uploads,cache,logs}
+       presshost help         Show this message
+EOF
+                exit 0
+                ;;
+            fix-perms)
+                fix_perms
+                exit $?
+                ;;
+        esac
+    fi
     main_menu
 }
 

@@ -1,29 +1,36 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_NAME="NGINX-RELOAD"
-LOG_FILE="${LOGS_PATH}/cron-nginx.log"
-source "/usr/local/bin/common-utils.sh" || { echo "ERROR: Failed to load common utilities" >&2; exit 1; }
+LOG_FILE="${LOGS_PATH:-/site/logs}/cron-nginx.log"
+STATE_FILE="/run/nginx-reload.hash"
+source "/usr/local/bin/common-utils.sh"
 
-info "Reloading NGINX configuration" >> "${LOG_FILE}" 2>&1
+WATCH_FILES=(
+    "${SSL_CERT_PATH:-/site/ssl/server.crt}"
+    "${SSL_PRIVATE_PATH:-/site/ssl/server.key}"
+    "${SSL_TRUSTED_CERT_PATH:-/site/ssl/server.crt}"
+)
 
-# Using s6-svc
-if s6-svc -h /run/service/nginx; then
-    success "NGINX configuration reloaded successfully using s6-svc" >> "${LOG_FILE}" 2>&1
+current_hash=$(
+    for f in "${WATCH_FILES[@]}"; do
+        [[ -f "$f" ]] && sha256sum "$f"
+    done | sha256sum | awk '{print $1}'
+)
+
+previous_hash=""
+[[ -f "$STATE_FILE" ]] && previous_hash=$(<"$STATE_FILE")
+
+if [[ "$current_hash" == "$previous_hash" ]]; then
     exit 0
 fi
 
-# Using s6-rc
-if s6-rc -d change nginx; then
-    success "NGINX configuration reloaded successfully using s6-rc" >> "${LOG_FILE}" 2>&1
+if [[ -z "$previous_hash" ]]; then
+    printf '%s' "$current_hash" > "$STATE_FILE"
     exit 0
 fi
 
-# fallback
-if /usr/sbin/nginx -s reload >> "${LOG_FILE}" 2>&1; then
-    success "NGINX configuration reloaded successfully using nginx -s reload" >> "${LOG_FILE}" 2>&1
-    exit 0
-else
-    error "Failed to reload NGINX configuration" >> "${LOG_FILE}" 2>&1
-    exit 1
-fi
+info "SSL certificate change detected; reloading NGINX" >> "${LOG_FILE}" 2>&1
+s6-svc -h /run/service/nginx >> "${LOG_FILE}" 2>&1
+printf '%s' "$current_hash" > "$STATE_FILE"
+success "NGINX reload signal sent" >> "${LOG_FILE}" 2>&1

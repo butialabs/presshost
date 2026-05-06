@@ -5,14 +5,14 @@ if [[ "${COMMON_UTILS_LOADED:-}" == "true" ]]; then
 fi
 
 COMMON_UTILS_LOADED="true"
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly WHITE='\033[1;37m'
-readonly NC='\033[0m'
+declare -xr RED='\033[0;31m'
+declare -xr GREEN='\033[0;32m'
+declare -xr YELLOW='\033[1;33m'
+declare -xr BLUE='\033[0;34m'
+declare -xr PURPLE='\033[0;35m'
+declare -xr CYAN='\033[0;36m'
+declare -xr WHITE='\033[1;37m'
+declare -xr NC='\033[0m'
 
 readonly PRESSHOST_NEWT_ERROR='root=white,black;window=white,red;border=white,red;title=white,red;textbox=white,red;button=black,white;actbutton=white,red;actsellistbox=white,red;'
 readonly PRESSHOST_NEWT_WARNING='root=white,black;window=black,yellow;border=black,yellow;title=black,yellow;textbox=black,yellow;button=black,white;actbutton=black,yellow;actsellistbox=black,yellow;'
@@ -21,8 +21,29 @@ readonly PRESSHOST_NEWT_SUCCESS='root=white,black;window=black,green;border=blac
 
 SCRIPT_NAME="${SCRIPT_NAME:-$(basename "${BASH_SOURCE[1]}" .sh | tr '[:lower:]' '[:upper:]')}"
 
-_get_timestamp() {
-    date +'%Y-%m-%d %H:%M:%S'
+readonly LOG_LEVEL_ERROR=1
+readonly LOG_LEVEL_WARN=2
+readonly LOG_LEVEL_INFO=3
+readonly LOG_LEVEL_DEBUG=4
+readonly LOG_LEVEL_TRACE=5
+
+_resolve_log_level() {
+    local raw="${LOG_LEVEL:-WARN}"
+    case "${raw^^}" in
+        ERROR|ERR|CRITICAL|CRIT|FATAL|0|1) echo "$LOG_LEVEL_ERROR" ;;
+        WARN|WARNING|2)                    echo "$LOG_LEVEL_WARN" ;;
+        INFO|NOTICE|3)                     echo "$LOG_LEVEL_INFO" ;;
+        DEBUG|4)                           echo "$LOG_LEVEL_DEBUG" ;;
+        TRACE|VERBOSE|5)                   echo "$LOG_LEVEL_TRACE" ;;
+        *)                                 echo "$LOG_LEVEL_WARN" ;;
+    esac
+}
+
+_log_enabled() {
+    local required="$1"
+    local current
+    current=$(_resolve_log_level)
+    (( current >= required ))
 }
 
 _format_message() {
@@ -32,83 +53,48 @@ _format_message() {
     echo -e "${color}[$(date +'%Y-%m-%d %H:%M:%S')] ${SCRIPT_NAME} ${level}:${NC} ${message}"
 }
 
-log() {
-    _format_message "INFO" "$1" "$GREEN"
+critical() {
+    _log_enabled "$LOG_LEVEL_ERROR" || return 0
+    echo -e "\033[41m\033[1;37m[$(date +'%Y-%m-%d %H:%M:%S')] ${SCRIPT_NAME} CRITICAL: ${1}${NC}" >&2
 }
 
 error() {
+    _log_enabled "$LOG_LEVEL_ERROR" || return 0
     _format_message "ERROR" "$1" "$RED" >&2
 }
 
 warning() {
+    _log_enabled "$LOG_LEVEL_WARN" || return 0
     _format_message "WARNING" "$1" "$YELLOW"
 }
 
 info() {
+    _log_enabled "$LOG_LEVEL_INFO" || return 0
     _format_message "INFO" "$1" "$BLUE"
 }
 
-debug() {
-    if [[ "${DEBUG:-false}" == "true" ]]; then
-        _format_message "DEBUG" "$1" "$PURPLE"
-    fi
-}
-
 success() {
+    _log_enabled "$LOG_LEVEL_INFO" || return 0
     _format_message "SUCCESS" "$1" "$CYAN"
 }
 
-critical() {
-    echo -e "\033[41m\033[1;37m[$(date +'%Y-%m-%d %H:%M:%S')] ${SCRIPT_NAME} CRITICAL: ${1}${NC}" >&2
+debug() {
+    _log_enabled "$LOG_LEVEL_DEBUG" || return 0
+    _format_message "DEBUG" "$1" "$PURPLE"
 }
 
-verbose() {
-    if [[ "${VERBOSE:-false}" == "true" ]]; then
-        _format_message "VERBOSE" "$1" "$WHITE"
-    fi
+trace() {
+    _log_enabled "$LOG_LEVEL_TRACE" || return 0
+    _format_message "TRACE" "$1" "$WHITE"
 }
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-file_readable() {
-    [[ -f "$1" && -r "$1" ]]
-}
-
-dir_writable() {
-    [[ -d "$1" && -w "$1" ]]
-}
-
-safe_execute() {
-    local cmd="$1"
-    local description="${2:-Executing command}"
-    debug "$description: $cmd"
-    if eval "$cmd" 2>/dev/null; then
-        debug "$description completed successfully"
-        return 0
-    else
-        local exit_code=$?
-        error "$description failed with exit code: $exit_code"
-        return $exit_code
-    fi
-}
-
-require_env_vars() {
-    local missing_vars=()
-    for var in "$@"; do
-        if [[ -z "${!var:-}" ]]; then
-            missing_vars+=("$var")
-        fi
-    done
-    if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        critical "Missing required environment variables: ${missing_vars[*]}"
-        exit 1
-    fi
-}
-
-export -f log error warning info debug success critical verbose
-export -f command_exists file_readable dir_writable safe_execute require_env_vars
+export -f error warning info debug success critical trace
+export -f _resolve_log_level _log_enabled
+export -f command_exists
 
 WHIPTAIL_BACKTITLE="${WHIPTAIL_BACKTITLE:-PressHost}"
 WHIPTAIL_DEFAULT_HEIGHT=20
@@ -515,117 +501,86 @@ readonly PRESS_DEFAULT_USER="presshost"
 readonly PRESS_DEFAULT_SKIP_EMAIL="true"
 readonly PRESS_DEFAULT_LOCALE="en_US"
 
+generate_local_salts() {
+    local target_file="$1"
+    local keys=(AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT)
+    {
+        echo "<?php"
+        local key value
+        for key in "${keys[@]}"; do
+            value=$(openssl rand -base64 64 | tr -d '\n\r' | head -c 64)
+            value="${value//\'/}"
+            printf "define('%s', '%s');\n" "$key" "$value"
+        done
+    } > "$target_file"
+}
+export -f generate_local_salts
+
 generate_password() {
     local length="${1:-16}"
-    tr -dc 'A-Za-z0-9!@#$%^&*()_+-=' < /dev/urandom | head -c "$length" 2>/dev/null || \
-    openssl rand -base64 "$length" 2>/dev/null | head -c "$length" || \
-    date +%s%N | sha256sum | head -c "$length"
+    tr -dc 'A-Za-z0-9!@#$%^&*()_+-=' < /dev/urandom | head -c "$length"
 }
 
 download_press_archive() {
     local download_url="$1"
     local archive_file="$2"
     local press_name="${3:-Press}"
-    local max_attempts=3
-    local attempt=1
-    local download_success=false
-    
-    info "Downloading from: $download_url"
-    while [[ $attempt -le $max_attempts ]]; do
-        info "Download attempt $attempt of $max_attempts..."
-        if curl -fsSL "$download_url" -o "$archive_file"; then
-            success "${press_name} downloaded successfully"
-            download_success=true
-            break
-        else
-            warning "Download attempt $attempt failed"
-            if [[ $attempt -lt $max_attempts ]]; then
-                sleep 3
-            fi
-            attempt=$((attempt + 1))
-        fi
-    done
-    
-    if [[ "$download_success" != "true" ]]; then
-        error "Failed to download ${press_name} after $max_attempts attempts"
+
+    info "Downloading ${press_name} from: $download_url"
+    if ! curl -fsSL --retry 3 --retry-delay 3 "$download_url" -o "$archive_file"; then
+        error "Failed to download ${press_name}"
         return 1
     fi
-    
-    if [[ ! -f "$archive_file" ]] || [[ ! -s "$archive_file" ]]; then
-        error "Downloaded file is missing or empty"
-        return 1
-    fi
-    
-    info "Downloaded file size: $(du -h "$archive_file" | cut -f1)"
-    return 0
+    success "${press_name} downloaded ($(du -h "$archive_file" | cut -f1))"
 }
 
 extract_press_archive() {
     local archive_file="$1"
     local dest_dir="$2"
     local press_name="${3:-Press}"
-    
+
     info "Extracting ${press_name} files..."
-    if command_exists unzip; then
-        if unzip -q "$archive_file" -d "$dest_dir"; then
-            success "${press_name} extracted successfully"
-            return 0
-        else
-            error "Failed to extract ${press_name}"
-            return 1
-        fi
-    else
-        error "unzip command not found"
-        return 1
+    if unzip -q "$archive_file" -d "$dest_dir"; then
+        success "${press_name} extracted successfully"
+        return 0
     fi
+    error "Failed to extract ${press_name}"
+    return 1
 }
 
 install_press_files() {
     local source_dir="$1"
     local press_name="${2:-Press}"
-    
+
     info "Installing ${press_name} files..."
-    
-    if safe_execute "mkdir -p '$PRESS_WP_DIR'" "Creating ${press_name} directory"; then
-        debug "${press_name} directory ready: $PRESS_WP_DIR"
-    else
-        error "Failed to create ${press_name} directory"
-        return 1
-    fi
-    
+    mkdir -p "$PRESS_WP_DIR"
+
     info "Copying ${press_name} files..."
-    if safe_execute "cp -rf ${source_dir}/* '$PRESS_WP_DIR/'" "Copying ${press_name} files"; then
-        success "${press_name} files copied successfully"
-        if [[ -f "${PRESS_WP_DIR}/wp-config-sample.php" ]]; then
-            rm -f "${PRESS_WP_DIR}/wp-config-sample.php"
-        fi
-    else
+    if ! cp -rf "${source_dir}"/. "$PRESS_WP_DIR/"; then
         error "Failed to copy ${press_name} files"
         return 1
     fi
-    
+    success "${press_name} files copied successfully"
+    rm -f "${PRESS_WP_DIR}/wp-config-sample.php"
+
     set_press_permissions
-    return 0
 }
 
 set_press_permissions() {
     info "Setting file permissions..."
-    safe_execute "fast-chown '$PRESS_WP_DIR'" "Setting ownership"
-    safe_execute "find '$PRESS_WP_DIR' -type d -exec chmod 755 {} \;" "Setting directory permissions"
-    safe_execute "find '$PRESS_WP_DIR' -type f -exec chmod 644 {} \;" "Setting file permissions"
+    chown -R "${PRESS_USER}:${PRESS_GROUP}" "$PRESS_WP_DIR"
+    find "$PRESS_WP_DIR" -type d -exec chmod 755 {} +
+    find "$PRESS_WP_DIR" -type f -exec chmod 644 {} +
     success "File permissions configured"
 }
 
 setup_press_content() {
     info "Setting up wp-content structure..."
-    local dirs=("uploads" "plugins" "themes" "upgrade" "cache")
-    for dir in "${dirs[@]}"; do
+    local dir
+    for dir in uploads plugins themes upgrade cache; do
         local full_path="${PRESS_WP_DIR}/wp-content/${dir}"
-        if [[ ! -d "$full_path" ]]; then
-            if safe_execute "mkdir -p '$full_path'" "Creating $dir directory"; then
-                safe_execute "fast-chown '$full_path'" "Setting ownership for $dir"
-            fi
-        fi
+        mkdir -p "$full_path"
+        chown "${PRESS_USER}:${PRESS_GROUP}" "$full_path"
     done
     success "wp-content structure configured"
 }
@@ -633,7 +588,7 @@ setup_press_content() {
 cleanup_temp_dir() {
     local temp_dir="$1"
     info "Cleaning up temporary files..."
-    safe_execute "rm -rf '$temp_dir'" "Removing temporary directory"
+    rm -rf "$temp_dir"
 }
 
 PRESS_TYPE=""
@@ -676,67 +631,47 @@ verify_press_installation() {
     if [[ -z "$PRESS_VERSION" ]] && command_exists wp; then
         PRESS_VERSION=$(wp core version --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "")
     fi
-    
+
     [[ -z "$PRESS_VERSION" ]] && PRESS_VERSION="unknown"
     return 0
 }
 
 check_press_installed() {
-    $PRESS_WP_CLI core is-installed --allow-root --path="$PRESS_WP_DIR" 2>/dev/null
+    "$PRESS_WP_CLI" core is-installed --allow-root --path="$PRESS_WP_DIR" 2>/dev/null
 }
 
 create_press_config() {
     local press_name="${1:-Press}"
     local source_config="/tmp/wp-config.php"
-    
+    local target="${PRESS_WP_DIR}/wp-config.php"
+
     info "Setting up wp-config.php for ${press_name}..."
-    
-    if [[ -f "${PRESS_WP_DIR}/wp-config.php" ]]; then
+
+    if [[ -f "$target" ]]; then
         info "wp-config.php already exists, skipping creation"
         return 0
     fi
-    
-    if [[ ! -f "$source_config" ]]; then
-        error "Source wp-config.php not found at $source_config"
-        return 1
-    fi
-    
-    if safe_execute "cp '$source_config' '${PRESS_WP_DIR}/wp-config.php'" "Copying wp-config.php"; then
-        success "wp-config.php copied successfully"
-        safe_execute "fast-chown '${PRESS_WP_DIR}/wp-config.php'" "Setting wp-config.php ownership"
-        safe_execute "chmod 640 '${PRESS_WP_DIR}/wp-config.php'" "Setting wp-config.php permissions"
-        return 0
-    else
-        error "Failed to copy wp-config.php"
-        return 1
-    fi
+
+    cp "$source_config" "$target"
+    chown "${PRESS_USER}:${PRESS_GROUP}" "$target"
+    chmod 640 "$target"
+    success "wp-config.php copied successfully"
 }
 
 generate_press_secrets() {
     local press_name="${1:-Press}"
     local secrets_file="${PRESS_WP_DIR}/wp-secrets.php"
-    
-    info "Checking ${press_name} salt keys configuration..."
-    
-    if [[ -z "${AUTH_KEY:-}" ]] && [[ -z "${SECURE_AUTH_KEY:-}" ]] && [[ -z "${LOGGED_IN_KEY:-}" ]] && \
-       [[ -z "${NONCE_KEY:-}" ]] && [[ -z "${AUTH_SALT:-}" ]] && [[ -z "${SECURE_AUTH_SALT:-}" ]] && \
-       [[ -z "${LOGGED_IN_SALT:-}" ]] && [[ -z "${NONCE_SALT:-}" ]]; then
-        info "Generating wp-secrets.php with salt keys from WordPress API..."
-        echo '<?php' > "$secrets_file"
-        if curl -sf https://api.wordpress.org/secret-key/1.1/salt/ >> "$secrets_file"; then
-            success "Salt keys generated successfully"
-            safe_execute "fast-chown '$secrets_file'" "Setting wp-secrets.php ownership"
-            safe_execute "chmod 640 '$secrets_file'" "Setting wp-secrets.php permissions"
-            return 0
-        else
-            error "Failed to generate salt keys from WordPress API"
-            rm -f "$secrets_file"
-            return 1
-        fi
-    else
+
+    if [[ -n "${AUTH_KEY:-}${SECURE_AUTH_KEY:-}${LOGGED_IN_KEY:-}${NONCE_KEY:-}${AUTH_SALT:-}${SECURE_AUTH_SALT:-}${LOGGED_IN_SALT:-}${NONCE_SALT:-}" ]]; then
         info "Salt keys provided via environment variables"
         return 0
     fi
+
+    info "Generating wp-secrets.php with locally-generated salt keys..."
+    generate_local_salts "$secrets_file"
+    chown "${PRESS_USER}:${PRESS_GROUP}" "$secrets_file"
+    chmod 640 "$secrets_file"
+    success "Salt keys generated successfully"
 }
 
 run_press_install() {
@@ -784,14 +719,21 @@ run_press_install() {
     info "  URL: $site_url"
     info "  Title: $site_title"
     info "  Admin: $admin_user"
-    
-    local install_cmd="$PRESS_WP_CLI core install --allow-root --path='$PRESS_WP_DIR'"
-    install_cmd="$install_cmd --url='$site_url' --title='$site_title'"
-    install_cmd="$install_cmd --admin_user='$admin_user' --admin_password='$admin_pass'"
-    install_cmd="$install_cmd --admin_email='$admin_email' --locale='$locale'"
-    [[ "$skip_email" == "true" ]] && install_cmd="$install_cmd --skip-email"
-    
-    if eval "$install_cmd"; then
+
+    local -a install_args=(
+        "core" "install"
+        "--allow-root"
+        "--path=$PRESS_WP_DIR"
+        "--url=$site_url"
+        "--title=$site_title"
+        "--admin_user=$admin_user"
+        "--admin_password=$admin_pass"
+        "--admin_email=$admin_email"
+        "--locale=$locale"
+    )
+    [[ "$skip_email" == "true" ]] && install_args+=("--skip-email")
+
+    if "$PRESS_WP_CLI" "${install_args[@]}"; then
         success "${press_name} installed successfully!"
         if [[ -n "$generated_pass" ]]; then
             echo ""
@@ -807,22 +749,8 @@ run_press_install() {
     fi
 }
 
-show_press_next_steps() {
-    local press_name="${1:-Press}"
-    local installed="${2:-false}"
-    
-    echo ""
-    if [[ "$installed" == "true" ]]; then
-        success "${press_name} installed successfully!"
-        info "URL: ${INSTALL_URL:-${WP_HOME:-${WP_SITEURL:-'your-domain'}}}"
-        info "Admin: ${INSTALL_URL:-${WP_HOME:-${WP_SITEURL:-'your-domain'}}}/wp-admin/"
-    else
-        warning "Installation incomplete. See: https://github.com/butialabs/presshost"
-    fi
-}
-
 export -f generate_password download_press_archive extract_press_archive install_press_files
 export -f set_press_permissions setup_press_content cleanup_temp_dir verify_press_installation
-export -f check_press_installed create_press_config generate_press_secrets run_press_install show_press_next_steps
+export -f check_press_installed create_press_config generate_press_secrets run_press_install
 
 debug "Common utilities loaded successfully"
