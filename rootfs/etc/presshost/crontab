@@ -1,0 +1,8 @@
+# WordPress cron events
+* * * * * /usr/local/bin/wordpress-cron.sh >/dev/null 2>&1
+
+# NGINX reload (only if SSL certificates changed)
+0 0 * * * /usr/local/bin/nginx-reload.sh >/dev/null 2>&1
+
+# Daily log rotation
+0 4 * * * /usr/sbin/logrotate --state /run/logrotate.state /etc/logrotate.d/presshost >/dev/null 2>&1

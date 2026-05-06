@@ -1,2 +1,2 @@
 #!/command/with-contenv bash
-exec /usr/sbin/cron -f
+exec /usr/local/bin/supercronic -quiet /etc/presshost/crontab
