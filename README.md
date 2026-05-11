@@ -302,7 +302,7 @@ services:
       NGINX_SSL_STAPLING_VERIFY: "on"
     volumes:
       # ...
-      - /etc/letsencrypt:/site/ssl:ro
+      - /etc/certbot:/site/ssl:ro
 ```
 
 > **Note:** The `SSL_TRUSTED_CERT_PATH` variable should point to the intermediate certificate chain (`chain.pem`) for OCSP stapling to work correctly. Without this, you may see warnings like "ssl_stapling ignored, no OCSP responder URL in the certificate".

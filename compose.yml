@@ -54,18 +54,15 @@ services:
         max-file: "3"
 
   # SSL
-  certbot:
-    image: git.mrmeeb.stream/mrmeeb/certbot-cron:latest
-    container_name: certbot
-    restart: unless-stopped
+  certbot-dns-cloudflare:
+    container_name: certbot-dns-cloudflare
+    image: serversideup/certbot-dns-cloudflare
     volumes:
-      - ./presshost/certbot:/config
+      - /presshost/ssl:/etc/letsencrypt
     environment:
-      EMAIL: tecnologia@your-domain.xyz
-      DOMAINS: your-domain.xyz,www.your-domain.xyz
-      PLUGIN: cloudflare
-      INTERVAL: 0 0 1 * *
-      CLOUDFLARE_TOKEN: p@ssw0rd
+      CERTBOT_EMAIL: tecnologia@your-domain.xyz
+      CERTBOT_DOMAINS: your-domain.xyz,www.your-domain.xyz
+      CLOUDFLARE_API_TOKEN: p@ssw0rd
 
 networks:
   presshost:
