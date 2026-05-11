@@ -237,6 +237,34 @@ Existing files are never overwritten, so providing your own certificate (Let's E
 
 The cache can be purged using the NGINX Cache Purge module. We recommend using the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/)
 
+### Custom NGINX Configuration
+
+Two empty configuration files are included and loaded at startup. Mount your own versions to extend NGINX without modifying the image.
+
+| File (inside container)                        | Scope                             | When to use                                      |
+| ---------------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| `/etc/nginx/conf.d/custom-nginx.conf`          | `http {}` block (global)          | Custom upstreams, maps, rate-limit zones, etc.   |
+| `/etc/nginx/conf.d/custom-presshost.conf`      | `server {}` block (site-level)    | Extra locations, reverse proxies, rewrites, etc. |
+
+**Example — reverse proxy at `/i/` on the same domain:**
+
+```yaml
+# compose.yml
+services:
+  presshost:
+    volumes:
+      - ./custom-presshost.conf:/etc/nginx/conf.d/custom-presshost.conf
+```
+
+```nginx
+# custom-presshost.conf
+location /i/ {
+    proxy_pass http://image-service:3000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
 ### Logging
 
 All logs are written under `/site/logs` and rotated daily by `logrotate`: `nginx-access.log`, `nginx-error.log`, `php-fpm.log`, `php-error.log`, `php-slow.log`, `cron-presshost.log`, `cron-nginx.log` and `wp-debug.log` (when `WP_DEBUG_LOG=true`).

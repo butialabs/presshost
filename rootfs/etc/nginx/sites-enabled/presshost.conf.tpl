@@ -51,4 +51,6 @@ server {
     }
 
     include conf.d/status.conf;
+
+    include conf.d/custom-presshost.conf;
 }

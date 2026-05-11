@@ -160,5 +160,7 @@ http {
 
     include /etc/nginx/conf.d/cache-path.conf;
 
+    include /etc/nginx/conf.d/custom-nginx.conf;
+
     include /etc/nginx/sites-enabled/*;
 }
