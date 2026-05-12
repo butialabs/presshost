@@ -1,4 +1,4 @@
-name: CI
+name: 🛠️ CI
 
 on:
   push:
@@ -21,22 +21,22 @@ env:
 
 jobs:
   ci:
-    name: Build and Test
+    name: 🧪 Build and Test
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: Build image
+      - name: 🐳 Build image
         run: docker build -t "$IMAGE_NAME" .
 
-      - name: Cleanup previous containers
+      - name: 🧹 Cleanup previous containers
         run: |
           docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" 2>/dev/null || true
           docker network rm "$NETWORK" 2>/dev/null || true
 
-      - name: Start MariaDB
+      - name: 🗄️ Start MariaDB
         run: |
           docker network create "$NETWORK"
           docker run -d --name "$DB_CONTAINER" \
@@ -47,7 +47,7 @@ jobs:
             -e MARIADB_PASSWORD="$DB_PASSWORD" \
             mariadb:11
 
-      - name: Wait for MariaDB
+      - name: ⏳ Wait for MariaDB
         run: |
           for i in $(seq 1 30); do
             if docker exec "$DB_CONTAINER" mariadb-admin ping -uroot -p"$DB_ROOT_PASSWORD" 2>&1 \
@@ -61,7 +61,7 @@ jobs:
           docker logs "$DB_CONTAINER"
           exit 1
 
-      - name: Start PressHost
+      - name: 🚀 Start PressHost
         run: |
           docker run -d --name "$CONTAINER_NAME" \
             --network "$NETWORK" \
@@ -87,7 +87,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run tests
+      - name: 🔬 Run tests
         run: |
           set +e
           PASS=0
@@ -451,7 +451,7 @@ jobs:
             exit 1
           fi
 
-      - name: Cleanup containers
+      - name: 🧹 Cleanup containers
         if: always()
         run: |
           docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" 2>/dev/null || true
