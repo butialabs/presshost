@@ -109,12 +109,20 @@ if [[ "${PHP_PM:-}" == "auto" ]]; then
 fi
 export PHP_PM
 
-if [[ "${PHP_PM_START_SERVERS:-0}" -gt "${PHP_PM_MAX_CHILDREN:-50}" ]]; then
-    PHP_PM_START_SERVERS="${PHP_PM_MAX_CHILDREN}"
-    PHP_PM_MIN_SPARE_SERVERS="${PHP_PM_MAX_CHILDREN}"
-    PHP_PM_MAX_SPARE_SERVERS="${PHP_PM_MAX_CHILDREN}"
-    export PHP_PM_START_SERVERS PHP_PM_MIN_SPARE_SERVERS PHP_PM_MAX_SPARE_SERVERS
+_max="${PHP_PM_MAX_CHILDREN:-50}"
+if [[ "${PHP_PM_MAX_SPARE_SERVERS:-35}" -gt "${_max}" ]]; then
+    PHP_PM_MAX_SPARE_SERVERS="${_max}"
+    export PHP_PM_MAX_SPARE_SERVERS
 fi
+if [[ "${PHP_PM_MIN_SPARE_SERVERS:-10}" -gt "${_max}" ]]; then
+    PHP_PM_MIN_SPARE_SERVERS="${_max}"
+    export PHP_PM_MIN_SPARE_SERVERS
+fi
+if [[ "${PHP_PM_START_SERVERS:-0}" -gt "${_max}" ]]; then
+    PHP_PM_START_SERVERS="${_max}"
+    export PHP_PM_START_SERVERS
+fi
+unset _max
 
 build_pool_env_block() {
     local exact_keys=(
