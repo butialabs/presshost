@@ -1,5 +1,5 @@
 #!/bin/bash
-set -uo pipefail
+set -euo pipefail
 
 source /usr/local/bin/common-utils.sh
 
@@ -135,7 +135,7 @@ build_pool_env_block() {
         SMTP_USER SMTP_PASS SMTP_HOST SMTP_FROM SMTP_NAME SMTP_PORT SMTP_SECURE SMTP_AUTH SMTP_DEBUG
         AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY
         AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT
-        SITEURL TZ
+        SITEURL TZ LOGS_PATH UPLOADS_PATH CACHE_PATH APP_PATH WP_TABLE_PREFIX
     )
     local key value seen_keys=":"
 
@@ -300,7 +300,7 @@ fi
 
 if [[ -f /etc/logrotate.d/presshost.tpl ]]; then
     info "logrotate config..."
-    envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE} ${APP_USER} ${APP_GROUP}' \
+    envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE} ${APP_USER} ${APP_GROUP} ${PHP_VERSION}' \
     < /etc/logrotate.d/presshost.tpl \
     > /etc/logrotate.d/presshost
     rm -f /etc/logrotate.d/presshost.tpl
