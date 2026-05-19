@@ -329,8 +329,8 @@ info "Setting up runtime directories..."
 mkdir -p /run/nginx /run/php
 
 # Default index.php for empty installations
-if [[ -z "$(ls -A "${APP_PATH}" 2>/dev/null)" ]]; then
-    info "Empty installation directory detected at ${APP_PATH}"
+if [[ ! -f "${APP_PATH}/index.php" && ! -f "${APP_PATH}/wp-settings.php" ]]; then
+    info "No WordPress install or index.php found at ${APP_PATH}"
     if [[ -f /tmp/index.php ]]; then
         cp /tmp/index.php "${APP_PATH}/index.php"
         info "Default index.php copied to ${APP_PATH}"
