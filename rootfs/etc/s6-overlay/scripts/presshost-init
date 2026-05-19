@@ -164,6 +164,27 @@ build_pool_env_block() {
     done < <(env)
 }
 
+# WP Salts — generate wp-secrets.php if no env vars and no existing file
+_wp_secrets_file="${APP_PATH}/wp-secrets.php"
+_needs_salts=false
+for _salt_key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
+                 AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
+    [[ -z "${!_salt_key:-}" ]] && _needs_salts=true && break
+done
+if [[ "$_needs_salts" == "true" ]] && [[ ! -f "$_wp_secrets_file" ]]; then
+    info "Generating WordPress security keys at ${_wp_secrets_file}..."
+    {
+        echo "<?php"
+        for _salt_key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
+                         AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
+            printf "define('%s', '%s');\n" "$_salt_key" "$(openssl rand -base64 48)"
+        done
+    } > "$_wp_secrets_file"
+    chmod 640 "$_wp_secrets_file"
+    info "WordPress security keys written."
+fi
+unset _wp_secrets_file _needs_salts _salt_key
+
 info "Starting template processing..."
 
 if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
