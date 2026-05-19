@@ -150,7 +150,6 @@ http {
     }
 
     limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
-    limit_req_zone $binary_remote_addr zone=xmlrpc_limit:10m rate=1r/s;
     limit_req_zone $binary_remote_addr zone=global_limit:20m rate=${NGINX_RATE_LIMIT};
     limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
     limit_req_status 429;
