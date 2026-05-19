@@ -18,13 +18,13 @@ opcache.max_accelerated_files = ${PHP_OPCACHE_MAX_FILES}
 opcache.revalidate_freq = ${PHP_OPCACHE_REVALIDATE_FREQ}
 opcache.validate_timestamps = ${PHP_OPCACHE_VALIDATE_TIMESTAMPS}
 opcache.save_comments = 1
-opcache.fast_shutdown = 1
 
 opcache.jit = ${PHP_OPCACHE_JIT}
 opcache.jit_buffer_size = ${PHP_OPCACHE_JIT_BUFFER_SIZE}
 
 session.cookie_httponly = ${PHP_SESSION_COOKIE_HTTPONLY}
 session.cookie_secure = ${PHP_SESSION_COOKIE_SECURE}
+session.cookie_samesite = Strict
 session.use_strict_mode = ${PHP_SESSION_USE_STRICT_MODE}
 
 apc.enabled = ${PHP_APC_ENABLED}
