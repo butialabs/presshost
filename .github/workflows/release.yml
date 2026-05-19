@@ -15,7 +15,6 @@ jobs:
   setup:
     name: 🔍 Extract version
     runs-on: ubuntu-24.04
-    needs: [php-lint]
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
       prerelease: ${{ steps.get_version.outputs.PRERELEASE }}
