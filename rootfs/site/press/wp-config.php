@@ -114,6 +114,6 @@ foreach (getenv() as $key => $value) {
     }
 }
 
-$table_prefix = 'wp_';
+$table_prefix = getenv_docker('WP_TABLE_PREFIX', 'wp_');
 
 require_once ABSPATH . 'wp-settings.php';
