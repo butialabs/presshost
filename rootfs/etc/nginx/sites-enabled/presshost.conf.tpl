@@ -23,9 +23,6 @@ server {
     access_log ${LOGS_PATH}/nginx-access.log detailed buffer=256k flush=5s;
     error_log ${LOGS_PATH}/nginx-error.log ${NGINX_LOG_LEVEL};
 
-    limit_req zone=global_limit burst=${NGINX_RATE_BURST} nodelay;
-    limit_conn conn_limit ${NGINX_CONN_LIMIT};
-
     index index.php;
 
     location = /wp-login.php {
@@ -45,6 +42,8 @@ server {
     include conf.d/cache-purge.conf;
 
     location ~ \.php$ {
+        limit_req zone=global_limit burst=${NGINX_RATE_BURST} nodelay;
+        limit_conn conn_limit ${NGINX_CONN_LIMIT};
         fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
         include conf.d/fastcgi.conf;
         include conf.d/cache-fastcgi.conf;
