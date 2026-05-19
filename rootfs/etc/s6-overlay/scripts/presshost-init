@@ -44,6 +44,24 @@ fi
 
 export NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-_}"
 
+if [[ "${SITEURL_FULL:-}" == https://* ]]; then
+    export NGINX_HTTP_LISTEN=""
+    {
+        printf 'server {\n'
+        printf '    listen %s default_server reuseport;\n'     "${NGINX_HTTP_PORT}"
+        printf '    listen [::]:%s default_server reuseport;\n' "${NGINX_HTTP_PORT}"
+        printf '    server_name %s;\n'                          "${NGINX_SERVER_NAME}"
+        printf '    return 301 https://$host$request_uri;\n'
+        printf '}\n'
+    } > /etc/nginx/sites-enabled/http-redirect.conf
+    info "HTTP > HTTPS redirect enabled (SITEURL has https://)"
+else
+    export NGINX_HTTP_LISTEN="listen ${NGINX_HTTP_PORT} default_server reuseport;
+    listen [::]:${NGINX_HTTP_PORT} default_server reuseport;"
+    printf '# HTTP redirect disabled — SITEURL has http://\n' \
+        > /etc/nginx/sites-enabled/http-redirect.conf
+fi
+
 # Cache key suffix for mobile split
 NGINX_CACHE_SPLIT_MOBILE="${NGINX_CACHE_SPLIT_MOBILE:-false}"
 if [[ "$NGINX_CACHE_SPLIT_MOBILE" == "true" ]]; then
@@ -265,7 +283,7 @@ if [[ -f /etc/nginx/nginx.conf.tpl ]]; then
 fi
 
 if [[ -f /etc/nginx/sites-enabled/presshost.conf.tpl ]]; then
-    envsubst '${APP_PATH} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION} ${NGINX_SERVER_NAME} ${NGINX_HTTP3_LISTEN} ${NGINX_HTTP3_HEADER} ${NGINX_RATE_BURST} ${NGINX_CONN_LIMIT} ${NGINX_HTTP_PORT} ${NGINX_HTTPS_PORT}' \
+    envsubst '${APP_PATH} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION} ${NGINX_SERVER_NAME} ${NGINX_HTTP3_LISTEN} ${NGINX_HTTP3_HEADER} ${NGINX_RATE_BURST} ${NGINX_CONN_LIMIT} ${NGINX_HTTP_PORT} ${NGINX_HTTPS_PORT} ${NGINX_HTTP_LISTEN}' \
     < /etc/nginx/sites-enabled/presshost.conf.tpl \
     > /etc/nginx/sites-enabled/presshost.conf
     rm -f /etc/nginx/sites-enabled/presshost.conf.tpl

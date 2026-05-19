@@ -1,11 +1,5 @@
 server {
-    listen ${NGINX_HTTP_PORT} default_server reuseport;
-    listen [::]:${NGINX_HTTP_PORT} default_server reuseport;
-    server_name ${NGINX_SERVER_NAME};
-    return 301 https://$host$request_uri;
-}
-
-server {
+    ${NGINX_HTTP_LISTEN}
     listen ${NGINX_HTTPS_PORT} ssl default_server reuseport;
     listen [::]:${NGINX_HTTPS_PORT} ssl default_server reuseport;
     ${NGINX_HTTP3_LISTEN}
