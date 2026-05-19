@@ -193,6 +193,8 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf ]]; then
     sed -i -E "s|^error_log\s*=.*|error_log = ${LOGS_PATH}/php-fpm.log|" \
         /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
     sed -i -E '/^log_level\s*=/d' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
+    sed -i -E "s|^;?pid\s*=.*|pid = /run/php/php${PHP_VERSION}-fpm.pid|" \
+        /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
 fi
 
 # FPM emergency-restart
