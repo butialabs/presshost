@@ -11,9 +11,6 @@ services:
       DB_PASSWORD: p@ssw0rd
       DB_HOST: db
       TZ: UTC
-      # SSL_CERT_PATH: /site/ssl/live/your-domain.xyz/fullchain.pem
-      # SSL_PRIVATE_PATH: /site/ssl/live/your-domain.xyz/privkey.pem
-      # SSL_TRUSTED_CERT_PATH: /site/ssl/live/your-domain.xyz/chain.pem
     volumes:
       - ./presshost/press:/site/press
       - ./presshost/uploads:/site/uploads
@@ -52,17 +49,6 @@ services:
       options:
         max-size: 10m
         max-file: "3"
-
-  # SSL
-  certbot-dns-cloudflare:
-    container_name: certbot-dns-cloudflare
-    image: serversideup/certbot-dns-cloudflare
-    volumes:
-      - /presshost/ssl:/etc/letsencrypt
-    environment:
-      CERTBOT_EMAIL: tecnologia@your-domain.xyz
-      CERTBOT_DOMAINS: your-domain.xyz,www.your-domain.xyz
-      CLOUDFLARE_API_TOKEN: p@ssw0rd
 
 networks:
   presshost:

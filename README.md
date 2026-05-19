@@ -93,6 +93,7 @@ docker compose up -d
 | `WP_MAX_MEMORY_LIMIT`        | `512M`       | Maximum memory limit on Admin                       |
 | `WP_CACHE`                   | `false`      | Enable caching                                      |
 | `WP_CACHE_KEY_SALT`          | ``           | Cache key salt                                      |
+| `WP_TABLE_PREFIX`            | `wp_`        | Database table prefix — change before first install |
 | `MEDIA_TRASH`                | `true`       | Enable media trash functionality                    |
 | `DISABLE_NAG_NOTICES`        | `true`       | Disable admin nag notices                           |
 
@@ -192,13 +193,13 @@ docker compose up -d
 | `NGINX_FASTCGI_BUFFER_SIZE`         | `32k`    | FastCGI buffer size                               |
 | `NGINX_FASTCGI_BUFFERS`             | `16 16k` | FastCGI buffers                                   |
 | `NGINX_FASTCGI_BUSY_BUFFERS_SIZE`   | `64k`    | FastCGI busy buffers size                         |
-| `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `300s`   | FastCGI connect timeout (must be >= PHP timeouts) |
-| `NGINX_FASTCGI_SEND_TIMEOUT`        | `300s`   | FastCGI send timeout (must be >= PHP timeouts)    |
-| `NGINX_FASTCGI_READ_TIMEOUT`        | `300s`   | FastCGI read timeout (must be >= PHP timeouts)    |
+| `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `60s`    | FastCGI connect timeout                           |
+| `NGINX_FASTCGI_SEND_TIMEOUT`        | `60s`    | FastCGI send timeout                              |
+| `NGINX_FASTCGI_READ_TIMEOUT`        | `300s`   | FastCGI read timeout (covers long PHP operations) |
 | `NGINX_KEEPALIVE_TIMEOUT`           | `65s`    | Keepalive timeout                                 |
 | `NGINX_KEEPALIVE_REQUESTS`          | `1000`   | Requests per keepalive                            |
 | `NGINX_CLIENT_BODY_TIMEOUT`         | `60s`    | Client body timeout                               |
-| `NGINX_CLIENT_HEADER_TIMEOUT`       | `120s`   | Client header timeout                             |
+| `NGINX_CLIENT_HEADER_TIMEOUT`       | `30s`    | Client header timeout                             |
 | `NGINX_SEND_TIMEOUT`                | `60s`    | Send timeout                                      |
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache. When set to false, no cache directories or files are created |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
@@ -337,6 +338,56 @@ services:
 
 > **Note:** Nginx automatically reloads daily at 00:00 (container timezone) to pick up renewed certificates. This ensures seamless certificate rotation without manual intervention.
 
+
+## Performance Tuning
+
+### FastCGI Page Cache
+
+Nginx caches the rendered HTML of anonymous (non-logged-in) requests and serves it directly.
+
+```yaml
+environment:
+  NGINX_CACHE: "true"
+  NGINX_CACHE_MAX_SIZE: "1g"   # total disk space for the cache
+  NGINX_CACHE_INACTIVE: "60m"  # evict pages not hit in this window
+```
+
+Cache is automatically bypassed for logged-in users, WooCommerce cart/checkout, wp-admin, POST requests, and WordPress preview mode.
+For on-demand purge from the WordPress admin, install the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/) plugin and point it at the FastCGI cache.
+
+### Valkey Object Cache
+
+Stores WordPress object-cache data (database query results, transients) in Valkey so they survive across requests and processes.
+
+```yaml
+services:
+  presshost:
+    environment:
+      WP_CACHE: "true"
+      WP_REDIS_HOST: valkey
+      WP_REDIS_PORT: 6379
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: valkey
+    restart: unless-stopped
+    command: valkey-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
+    networks:
+      - presshost
+```
+
+Then install and activate the [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin inside WordPress.
+
+### OPcache JIT (PHP 8.4)
+
+PHP 8.4 includes a JIT compiler that can improve throughput on CPU-bound workloads (WooCommerce, page builders, image processing).
+It is disabled by default because a small number of plugins with legacy code may behave incorrectly with JIT enabled.
+
+```yaml
+environment:
+  PHP_OPCACHE_JIT: "tracing"       # recommended mode for WordPress
+  PHP_OPCACHE_JIT_BUFFER_SIZE: "128M"
+```
 
 ### CLI and Tips:
 
