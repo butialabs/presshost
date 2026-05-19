@@ -371,8 +371,8 @@ jobs:
           dexec "$CONTAINER_NAME" runuser -u "$APP_USER" -- /usr/local/bin/wp \
             --path=/site/press cron event schedule presshost_test_event now >/dev/null
 
-          dexec "$CONTAINER_NAME" sh -c 'kill -USR2 $(cat /run/php/php*-fpm.pid)' >/dev/null
-          sleep 3
+          dexec "$CONTAINER_NAME" sh -c 'kill -TERM $(cat /run/php/php*-fpm.pid)' >/dev/null
+          sleep 10
           end_step
 
           # ──────────────────────────────────────────────────────────────────────

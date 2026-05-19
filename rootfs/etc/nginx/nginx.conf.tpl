@@ -1,6 +1,4 @@
-load_module modules/ngx_http_brotli_filter_module.so;
-load_module modules/ngx_http_brotli_static_module.so;
-load_module modules/ngx_http_cache_purge_module.so;
+include /etc/nginx/modules-enabled/*.conf;
 
 user ${APP_USER};
 worker_processes auto;
