@@ -341,11 +341,11 @@ jobs:
           step "Testing SuperCRONic"
           # ──────────────────────────────────────────────────────────────────────
           CRON=$(dexec "$CONTAINER_NAME" cat /etc/presshost/crontab)
-          assert_match "$CRON" '^\* \* \* \* \* /usr/local/bin/wordpress-cron\.sh' "WP-cron entry present"
+          assert_match "$CRON" '^\* \* \* \* \* /usr/local/bin/press-cron\.sh' "WP-cron entry present"
           assert_match "$CRON" '^0 0 \* \* \* /usr/local/bin/nginx-reload\.sh'     "nginx-reload entry present"
           assert_match "$CRON" '^0 4 \* \* \* /usr/sbin/logrotate'                 "daily logrotate entry present"
 
-          WPCRON=$(dexec "$CONTAINER_NAME" cat /usr/local/bin/wordpress-cron.sh)
+          WPCRON=$(dexec "$CONTAINER_NAME" cat /usr/local/bin/press-cron.sh)
           assert_contains "$WPCRON" "runuser -u" "wp-cron drops privileges via runuser"
 
           SUPERCRONIC_PROC=$(dexec "$CONTAINER_NAME" sh -c "pgrep -af supercronic | head -3")

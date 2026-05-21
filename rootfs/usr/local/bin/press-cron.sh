@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_NAME="WORDPRESS-CRON"
+SCRIPT_NAME="PRESS-CRON"
 APP_USER="${APP_USER:-www-data}"
 APP_PATH="${APP_PATH:-/site/press}"
 LOG_FILE="${LOGS_PATH:-/site/logs}/cron-presshost.log"

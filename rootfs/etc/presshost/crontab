@@ -1,5 +1,5 @@
 # WordPress cron events
-* * * * * /usr/local/bin/wordpress-cron.sh >/dev/null 2>&1
+* * * * * /usr/local/bin/press-cron.sh >/dev/null 2>&1
 
 # NGINX reload (only if SSL certificates changed)
 0 0 * * * /usr/local/bin/nginx-reload.sh >/dev/null 2>&1
