@@ -209,6 +209,44 @@ jobs:
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
+          step "Block exploits"
+          # ──────────────────────────────────────────────────────────────────────
+          EXPLOIT_CONF=$(dexec "$CONTAINER_NAME" cat /etc/nginx/conf.d/block-exploits.conf)
+          assert_contains "$EXPLOIT_CONF" "block_sql_injections" "block-exploits.conf is present and loaded"
+
+          # SQL injection → 403
+          HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
+            "$BASE_URL/?id=1%20union%20all%20select%201,2,3--" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then pass "SQL injection blocked (403)"; else fail "SQL injection not blocked (got $HTTP_CODE)"; fi
+
+          # Path traversal → 403
+          HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
+            "$BASE_URL/?file=../../etc/passwd" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then pass "Path traversal blocked (403)"; else fail "Path traversal not blocked (got $HTTP_CODE)"; fi
+
+          # XSS / common exploit → 403
+          HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
+            "$BASE_URL/?q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then pass "XSS exploit blocked (403)"; else fail "XSS exploit not blocked (got $HTTP_CODE)"; fi
+
+          # Spam keyword → 403
+          HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
+            "$BASE_URL/?q=buy+viagra+online" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then pass "Spam keyword blocked (403)"; else fail "Spam keyword not blocked (got $HTTP_CODE)"; fi
+
+          # Bad user agent → 403
+          HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
+            -A "libwww-perl" "$BASE_URL/" || echo "000")
+          if [ "$HTTP_CODE" = "403" ]; then pass "Bad user agent blocked (403)"; else fail "Bad user agent not blocked (got $HTTP_CODE)"; fi
+
+          # Blocked requests must not appear in the access log
+          sleep 6  # wait for nginx buffer flush (buffer=256k flush=5s)
+          ACCESS_LOG=$(dexec "$CONTAINER_NAME" sh -c "cat /site/logs/nginx-access.log 2>/dev/null || echo ''")
+          assert_not_contains "$ACCESS_LOG" "union%20all%20select" "SQL injection not written to access log"
+          assert_not_contains "$ACCESS_LOG" "libwww-perl"          "Bad user agent not written to access log"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
           step "Default index served on empty install"
           # ──────────────────────────────────────────────────────────────────────
           INDEX_BODY=$(curl -s --max-time 5 "$BASE_URL/" || true)
