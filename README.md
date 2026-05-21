@@ -273,8 +273,8 @@ All logs are written under `/site/logs` and rotated daily by `logrotate`: `nginx
 | Variable       | Default | Description                                                                                                  |
 | -------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
 | `LOG_LEVEL`    | `WARN`  | `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. Default shows only errors and serious warnings. |
-| `LOG_MAX_SIZE` | `100M`  | Logrotate trigger size                                                                                       |
-| `LOG_MAX_AGE`  | `7`     | Number of rotated copies to keep (days)                                                                      |
+| `LOG_MAX_SIZE` | `10M`   | Logrotate max size per log file (rotates daily or when exceeded)                                             |
+| `LOG_MAX_AGE`  | `7`     | Number of rotated copies to keep (7 days)                                                                    |
 
 ### Installation
 
