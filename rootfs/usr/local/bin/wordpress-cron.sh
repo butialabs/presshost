@@ -5,6 +5,7 @@ SCRIPT_NAME="WORDPRESS-CRON"
 APP_USER="${APP_USER:-www-data}"
 APP_PATH="${APP_PATH:-/site/press}"
 LOG_FILE="${LOGS_PATH:-/site/logs}/cron-presshost.log"
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
 source "/usr/local/bin/common-utils.sh"
 
 info "WordPress cron started" >> "${LOG_FILE}" 2>&1

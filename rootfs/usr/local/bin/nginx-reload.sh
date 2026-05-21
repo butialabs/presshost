@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_NAME="NGINX-RELOAD"
 LOG_FILE="${LOGS_PATH:-/site/logs}/cron-nginx.log"
 STATE_FILE="/run/nginx-reload.hash"
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
 source "/usr/local/bin/common-utils.sh"
 
 WATCH_FILES=(
