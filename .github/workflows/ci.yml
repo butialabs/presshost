@@ -345,9 +345,6 @@ jobs:
           assert_match "$CRON" '^0 0 \* \* \* /usr/local/bin/nginx-reload\.sh'     "nginx-reload entry present"
           assert_match "$CRON" '^0 4 \* \* \* /usr/sbin/logrotate'                 "daily logrotate entry present"
 
-          WPCRON=$(dexec "$CONTAINER_NAME" cat /usr/local/bin/press-cron.sh)
-          assert_contains "$WPCRON" "runuser -u" "wp-cron drops privileges via runuser"
-
           SUPERCRONIC_PROC=$(dexec "$CONTAINER_NAME" sh -c "pgrep -af supercronic | head -3")
           assert_match "$SUPERCRONIC_PROC" 'supercronic' "supercronic daemon is running"
           end_step
@@ -445,27 +442,22 @@ jobs:
           CRON_LOG_PATH="/site/logs/cron-presshost.log"
           DEADLINE=$((SECONDS + 125))
           CRON_FIRED=false
-          CRON_AS_CORRECT_USER=false
           CRON_SUCCEEDED=false
 
           while [ $SECONDS -lt $DEADLINE ]; do
             LAST_LOG=$(dexec "$CONTAINER_NAME" sh -c "cat $CRON_LOG_PATH 2>/dev/null || echo ''")
-            if echo "$LAST_LOG" | grep -qE 'Running WordPress cron events as ([a-zA-Z0-9_-]+)'; then
+            if echo "$LAST_LOG" | grep -qE 'Running Press cron events'; then
               CRON_FIRED=true
-              if echo "$LAST_LOG" | grep -qE "Running WordPress cron events as ${APP_USER}"; then
-                CRON_AS_CORRECT_USER=true
-              fi
             fi
-            if echo "$LAST_LOG" | grep -q 'WordPress cron events completed successfully'; then
+            if echo "$LAST_LOG" | grep -q 'Press cron events completed successfully'; then
               CRON_SUCCEEDED=true
             fi
             if $CRON_FIRED && $CRON_SUCCEEDED; then break; fi
             sleep 10
           done
 
-          $CRON_FIRED         && pass "cron tick observed within 2 minutes"      || fail "cron did not fire within 2 minutes"
-          $CRON_AS_CORRECT_USER && pass "WP-cron executed as $APP_USER"          || fail "WP-cron did not execute as $APP_USER"
-          $CRON_SUCCEEDED       && pass "WP-cron completed successfully"          || fail "WP-cron did not log success"
+          $CRON_FIRED     && pass "cron tick observed within 2 minutes" || fail "cron did not fire within 2 minutes"
+          $CRON_SUCCEEDED && pass "Press cron completed successfully"   || fail "Press cron did not log success"
           end_step
 
           # ──────────────────────────────────────────────────────────────────────

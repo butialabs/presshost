@@ -15,9 +15,10 @@ if [[ ! -f "${APP_PATH}/wp-load.php" ]]; then
     exit 0
 fi
 
+info "Running Press cron events" >> "${LOG_FILE}" 2>&1
 if runuser -u "${APP_USER}" -- /usr/local/bin/wp --path="${APP_PATH}" cron event run --due-now >> "${LOG_FILE}" 2>&1; then
-    success "Cron events completed successfully" >> "${LOG_FILE}" 2>&1
+    success "Press cron events completed successfully" >> "${LOG_FILE}" 2>&1
 else
-    error "Failed to run Cron events" >> "${LOG_FILE}" 2>&1
+    error "Failed to run Press cron events" >> "${LOG_FILE}" 2>&1
     exit 1
 fi
