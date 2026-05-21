@@ -17,9 +17,12 @@ server {
     ssl_stapling_verify ${NGINX_SSL_STAPLING_VERIFY};
     ${NGINX_HTTP3_HEADER}
 
-    include conf.d/security.conf;
+    set $loggable 1;
 
-    access_log ${LOGS_PATH}/nginx-access.log detailed buffer=256k flush=5s;
+    include conf.d/headers.conf;
+    include conf.d/block-exploits.conf;
+
+    access_log ${LOGS_PATH}/nginx-access.log detailed buffer=256k flush=5s if=$loggable;
     error_log ${LOGS_PATH}/nginx-error.log ${NGINX_LOG_LEVEL};
 
     index index.php;
@@ -36,7 +39,6 @@ server {
 
     include conf.d/compression.conf;
     include conf.d/static.conf;
-    include conf.d/press.conf;
     include conf.d/proxy.conf;
     include conf.d/cache-purge.conf;
 
