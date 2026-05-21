@@ -7,6 +7,9 @@ APP_PATH="${APP_PATH:-/site/press}"
 LOG_FILE="${LOGS_PATH:-/site/logs}/cron-presshost.log"
 source "/usr/local/bin/common-utils.sh"
 
+info "WordPress cron started" >> "${LOG_FILE}" 2>&1
+trap 'info "WordPress cron finished" >> "${LOG_FILE}" 2>&1' EXIT
+
 if [[ ! -f "${APP_PATH}/wp-load.php" ]]; then
     info "No Press installation detected at ${APP_PATH}!" >> "${LOG_FILE}" 2>&1
     exit 0

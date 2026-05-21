@@ -30,7 +30,8 @@ if [[ -z "$previous_hash" ]]; then
     exit 0
 fi
 
+info "NGINX reload started" >> "${LOG_FILE}" 2>&1
 info "SSL certificate change detected; reloading NGINX" >> "${LOG_FILE}" 2>&1
 s6-svc -h /run/service/nginx >> "${LOG_FILE}" 2>&1
 printf '%s' "$current_hash" > "$STATE_FILE"
-success "NGINX reload signal sent" >> "${LOG_FILE}" 2>&1
+success "NGINX reload finished" >> "${LOG_FILE}" 2>&1
