@@ -10,8 +10,6 @@
 
 ## Features
 
-https://github.com/user-attachments/assets/92308dad-0dd8-4b38-9f5e-f22cc136fb31
-
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
 - 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
@@ -170,7 +168,7 @@ docker compose up -d
 | `PHP_OPCACHE_VALIDATE_TIMESTAMPS`   | `0`       | Validate timestamps (0 = production; redeploy/restart container to pick up code changes) |
 | `PHP_OPCACHE_JIT`                   | `off`     | JIT mode (`tracing`, `function`, `off`). Disabled by default. |
 | `PHP_OPCACHE_JIT_BUFFER_SIZE`       | `128M`    | JIT buffer size (only used when JIT is enabled)  |
-| `PHP_DISABLE_FUNCTIONS`             | `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec` | Comma-separated list of disabled PHP functions (set to empty string to allow all) |
+| `PHP_DISABLE_FUNCTIONS`             | *1 | Comma-separated list of disabled PHP functions (set to empty string to allow all) |
 | `PHP_SESSION_COOKIE_HTTPONLY`       | `1`       | Session cookie httponly                          |
 | `PHP_SESSION_COOKIE_SECURE`         | `1`       | Session cookie secure                            |
 | `PHP_SESSION_USE_STRICT_MODE`       | `1`       | Session use strict mode                          |
@@ -180,6 +178,8 @@ docker compose up -d
 | `PHP_APC_ENABLE_CLI`                | `0`       | Enable APCu for CLI                              |
 | `PHP_REALPATH_CACHE_SIZE`           | `4096K`   | Realpath cache size                              |
 | `PHP_REALPATH_CACHE_TTL`            | `600`     | Realpath cache TTL (seconds)                     |
+
+*1 `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec`
 
 ### NGINX
 
