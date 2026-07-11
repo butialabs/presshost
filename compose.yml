@@ -5,12 +5,12 @@ services:
     container_name: presshost
     restart: unless-stopped
     environment:
-      SITEURL: https://your-domain.xyz
-      DB_NAME: presshost
-      DB_USER: presshost
-      DB_PASSWORD: p@ssw0rd
-      DB_HOST: db
-      TZ: UTC
+      SITEURL: ${SITEURL:-https://your-domain.xyz}
+      DB_NAME: ${DB_NAME:-presshost}
+      DB_USER: ${DB_USER:-presshost}
+      DB_PASSWORD: ${DB_PASSWORD:-p@ssw0rd}
+      DB_HOST: ${DB_HOST:-db}
+      TZ: ${TZ:-UTC}
     volumes:
       - ./presshost/press:/site/press
       - ./presshost/uploads:/site/uploads
@@ -23,7 +23,14 @@ services:
       - 80:80
       - 443:443
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/etc/s6-overlay/scripts/healthcheck-all"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     logging:
       driver: json-file
       options:
@@ -32,18 +39,24 @@ services:
 
   # Database
   db:
-    image: mariadb:11
+    image: mariadb:11.4
     container_name: db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: p@ssw0rd
-      MYSQL_DATABASE: presshost
-      MYSQL_USER: presshost
-      MYSQL_PASSWORD: p@ssw0rd
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-p@ssw0rd}
+      MYSQL_DATABASE: ${DB_NAME:-presshost}
+      MYSQL_USER: ${DB_USER:-presshost}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-p@ssw0rd}
     volumes:
       - ./presshost/db/data:/var/lib/mysql
     networks:
       - presshost
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     logging:
       driver: json-file
       options:
