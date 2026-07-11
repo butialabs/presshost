@@ -94,6 +94,7 @@ docker compose up -d
 | `WP_TABLE_PREFIX`            | `wp_`        | Database table prefix — change before first install |
 | `MEDIA_TRASH`                | `true`       | Enable media trash functionality                    |
 | `DISABLE_NAG_NOTICES`        | `true`       | Disable admin nag notices                           |
+| `DISABLE_WP_CRON`            | `true`       | Disable WP-Cron (handled by supercronic instead)    |
 
 ### Salts
 
