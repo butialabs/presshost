@@ -311,9 +311,19 @@ if [[ -f /etc/nginx/conf.d/cache-path.conf.tpl ]]; then
     else
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-fastcgi.conf
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-path.conf
-        echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-purge.conf
     fi
     rm -f /etc/nginx/conf.d/cache-path.conf.tpl
+fi
+
+if [[ -f /etc/nginx/conf.d/cache-purge.conf.tpl ]]; then
+    if [[ "${NGINX_CACHE:-false}" == "true" ]]; then
+        envsubst '${NGINX_CACHE_KEY_MOBILE_SUFFIX}' \
+        < /etc/nginx/conf.d/cache-purge.conf.tpl \
+        > /etc/nginx/conf.d/cache-purge.conf
+    else
+        echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-purge.conf
+    fi
+    rm -f /etc/nginx/conf.d/cache-purge.conf.tpl
 fi
 
 if [[ -f /etc/logrotate.d/presshost.tpl ]]; then

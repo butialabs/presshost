@@ -5,5 +5,5 @@ location ~ /purge(/.*) {
     allow 192.168.0.0/16;
     deny all;
 
-    fastcgi_cache_purge PRESSHOST "$scheme$request_method$host$1$is_logged_in";
+    fastcgi_cache_purge PRESSHOST "$scheme$request_method$host$1${NGINX_CACHE_KEY_MOBILE_SUFFIX}$is_logged_in";
 }
