@@ -33,7 +33,7 @@ http {
     uwsgi_temp_path /var/lib/nginx/uwsgi;
     scgi_temp_path /var/lib/nginx/scgi;
 
-    open_file_cache max=10000 inactive=20s;
+    open_file_cache max=10000 inactive=120s;
     open_file_cache_valid 30s;
     open_file_cache_min_uses 2;
     open_file_cache_errors on;
