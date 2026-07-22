@@ -1,5 +1,5 @@
-fastcgi_cache_valid 200 301 302 60m;
-fastcgi_cache_valid 404 1m;
+fastcgi_cache_valid 200 301 302 ${NGINX_CACHE_VALID_OK};
+fastcgi_cache_valid 404 ${NGINX_CACHE_VALID_NOT_FOUND};
 fastcgi_cache_use_stale error timeout updating invalid_header http_500 http_503;
 fastcgi_cache_background_update on;
 fastcgi_cache_lock on;
@@ -9,5 +9,4 @@ fastcgi_cache PRESSHOST;
 fastcgi_cache_bypass $skip_cache;
 fastcgi_no_cache $skip_cache;
 add_header X-FastCGI-Cache $upstream_cache_status;
-include conf.d/headers.conf;
 fastcgi_ignore_headers Cache-Control Expires Set-Cookie;

@@ -33,6 +33,10 @@ fi
 
 info "NGINX reload started" >> "${LOG_FILE}" 2>&1
 info "SSL certificate change detected; reloading NGINX" >> "${LOG_FILE}" 2>&1
+if ! /usr/sbin/nginx -t >> "${LOG_FILE}" 2>&1; then
+    error "nginx -t failed; skipping reload to avoid downtime" >> "${LOG_FILE}" 2>&1
+    exit 1
+fi
 s6-svc -h /run/service/nginx >> "${LOG_FILE}" 2>&1
 printf '%s' "$current_hash" > "$STATE_FILE"
 success "NGINX reload finished" >> "${LOG_FILE}" 2>&1

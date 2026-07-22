@@ -1,15 +1,15 @@
 include /etc/nginx/modules-enabled/*.conf;
 
 user ${APP_USER};
-worker_processes auto;
-worker_rlimit_nofile 65535;
+worker_processes ${NGINX_WORKER_PROCESSES};
+worker_rlimit_nofile ${NGINX_WORKER_RLIMIT_NOFILE};
 pid /run/nginx.pid;
 error_log ${LOGS_PATH}/nginx-error.log ${NGINX_LOG_LEVEL};
 
 events {
     multi_accept on;
     use epoll;
-    worker_connections 65535;
+    worker_connections ${NGINX_WORKER_CONNECTIONS};
     accept_mutex off;
 }
 
@@ -50,7 +50,7 @@ http {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
     ssl_prefer_server_ciphers off;
-    resolver 127.0.0.11 valid=30s;
+    ${NGINX_RESOLVER_BLOCK}
     resolver_timeout 2s;
 
     keepalive_timeout ${NGINX_KEEPALIVE_TIMEOUT};
@@ -80,28 +80,16 @@ http {
                         '"$http_referer" "$http_user_agent" '
                         'rt=$request_time uct="$upstream_connect_time" '
                         'uht="$upstream_header_time" urt="$upstream_response_time" '
-                        'cache=$upstream_cache_status mobile=$is_mobile';
+                        'cache=$upstream_cache_status';
 
     map $http_x_forwarded_proto $real_scheme {
         default $scheme;
         ~. $http_x_forwarded_proto;
     }
 
-    map $http_x_forwarded_host $real_host {
-        default $host;
-        ~. $http_x_forwarded_host;
-    }
-
-    map $http_user_agent $is_mobile {
-        default 0;
-        ~*android 1;
-        ~*iphone 1;
-        ~*ipad 1;
-        ~*mobile 1;
-        ~*webos 1;
-        ~*opera.mini 1;
-        ~*blackberry 1;
-        ~*windows.phone 1;
+    map $real_scheme $real_https {
+        default $https;
+        https on;
     }
 
     map $http_cookie $is_logged_in {
@@ -149,13 +137,15 @@ http {
         ~*1 1;
     }
 
-    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=${NGINX_LOGIN_RATE_LIMIT};
     limit_req_zone $binary_remote_addr zone=global_limit:20m rate=${NGINX_RATE_LIMIT};
     limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
     limit_req_status 429;
     limit_conn_status 429;
 
     include /etc/nginx/conf.d/cache-path.conf;
+    include /etc/nginx/conf.d/cdn-cache.conf;
+    include /etc/nginx/conf.d/origin-auth-map.conf;
 
     include /etc/nginx/conf.d/custom-nginx.conf;
 

@@ -6,7 +6,8 @@ if ! pgrep -x "nginx" > /dev/null; then
     exit 1
 fi
 
-if ! curl -s --fail "http://localhost:${NGINX_HTTP_PORT}/nginx-status" > /dev/null; then
+if ! curl -sk --fail "https://localhost:${NGINX_HTTPS_PORT}/nginx-status" > /dev/null \
+    && ! curl -s --fail "http://localhost:${NGINX_HTTP_PORT}/nginx-status" > /dev/null; then
     echo "[ERROR] $(date -Iseconds) - nginx is not responding"
     exit 1
 fi

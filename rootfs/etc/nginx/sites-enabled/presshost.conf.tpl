@@ -20,7 +20,9 @@ server {
     set $loggable 1;
 
     include conf.d/headers.conf;
+    include conf.d/origin-auth-check.conf;
     include conf.d/block-exploits.conf;
+    include conf.d/block-spam.conf;
 
     access_log ${LOGS_PATH}/nginx-access.log detailed buffer=256k flush=5s if=$loggable;
     error_log ${LOGS_PATH}/nginx-error.log ${NGINX_LOG_LEVEL};
@@ -28,7 +30,7 @@ server {
     index index.php;
 
     location = /wp-login.php {
-        limit_req zone=login_limit burst=10 nodelay;
+        limit_req zone=login_limit burst=${NGINX_LOGIN_BURST} nodelay;
         fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
         include conf.d/fastcgi.conf;
     }
@@ -48,6 +50,8 @@ server {
         fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
         include conf.d/fastcgi.conf;
         include conf.d/cache-fastcgi.conf;
+        include conf.d/cdn-headers.conf;
+        include conf.d/headers.conf;
     }
 
     include conf.d/status.conf;
