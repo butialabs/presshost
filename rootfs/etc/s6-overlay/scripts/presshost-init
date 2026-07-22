@@ -378,6 +378,7 @@ if [[ ! -f "${APP_PATH}/index.php" && ! -f "${APP_PATH}/wp-settings.php" ]]; the
     info "No WordPress install or index.php found at ${APP_PATH}"
     if [[ -f /tmp/index.php ]]; then
         cp /tmp/index.php "${APP_PATH}/index.php"
+        chown "${APP_USER}:${APP_GROUP}" "${APP_PATH}/index.php"
         info "Default index.php copied to ${APP_PATH}"
     else
         warning "Default index.php not found at /tmp/index.php"
@@ -419,6 +420,11 @@ if [[ -d "${APP_PATH}/wp-content" ]]; then
 
     ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
     info "Uploads symlink created"
+fi
+
+# Ownership remediation
+if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then
+    safe-chown "${APP_PATH}" "${UPLOADS_PATH}" "${CACHE_PATH}" "${LOGS_PATH}" || true
 fi
 
 info "PressHost initialization complete!"

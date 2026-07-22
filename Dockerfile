@@ -113,6 +113,7 @@ ENV TZ=UTC \
     VALKEY_PASSWORD="" \
     LOG_MAX_SIZE=10M \
     LOG_MAX_AGE=7 \
+    FIX_OWNERSHIP=true \
     WP_CLI_DIR=/.wp-cli \
     WP_CLI_CACHE_DIR=/.wp-cli/cache \
     WP_CLI_PACKAGES_DIR=/.wp-cli/packages \

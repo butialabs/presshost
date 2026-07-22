@@ -1,0 +1,30 @@
+#!/bin/bash
+# Manual use:
+#   docker exec presshost safe-chown /site/press
+#   docker exec presshost safe-chown /site/press /site/uploads
+set -uo pipefail
+
+APP_USER="${APP_USER:-www-data}"
+APP_GROUP="${APP_GROUP:-www-data}"
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: safe-chown <path> [path...]" >&2
+    exit 2
+fi
+
+status=0
+for path in "$@"; do
+    [[ -e "$path" ]] || continue
+
+    if [[ -z "$(find "$path" -maxdepth 1 \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) -print -quit 2>/dev/null)" ]]; then
+        continue
+    fi
+
+    echo "safe-chown: fixing ownership of ${path} (-> ${APP_USER}:${APP_GROUP})" >&2
+    if ! find "$path" \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) \
+            -exec chown "${APP_USER}:${APP_GROUP}" {} +; then
+        echo "safe-chown: chown failed on ${path}" >&2
+        status=1
+    fi
+done
+exit $status

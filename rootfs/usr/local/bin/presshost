@@ -694,7 +694,7 @@ fix_perms() {
             continue
         fi
         info "Processing ${p}..."
-        if ! chown -R "${target_user}:${target_group}" "$p"; then
+        if ! safe-chown "$p"; then
             error "chown failed on ${p}"
             rc=1
         fi
