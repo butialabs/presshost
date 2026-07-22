@@ -13,6 +13,9 @@
 - ⚡ Based on Debian + NGINX 1.26 + PHP 8.4 + s6-overlay v3
 - 🌱 Everything is done via environment variables; PHP configurations, NGINX, and even WordPress constants are handled by environment variables. No need to edit wp-config.php.
 - 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
+- 🌐 CDN-ready without plugins!
+- 🗄️ Optional local Redis/Valkey server
+- 🔐 Docker secrets (`*_FILE`) supported everywhere, including PHP-FPM requests.
 - 📦 Separate code, uploads, cache, and logs!
 - 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
 
@@ -60,6 +63,20 @@ docker compose up -d
 
 > Upon startup, an index.php file would be displayed automatically if none already exists.
 
+## Breaking changes on v3+
+
+If you are upgrading from a previous version, review these changes:
+
+| Change | Impact |
+| ------ | ------ |
+| `PHP_APC_*` renamed to `PHP_APCU_*` | Update your env vars (`PHP_APC_ENABLED` -> `PHP_APCU_ENABLED`, etc.) |
+| HSTS no longer sends `preload` by default | Set `NGINX_HSTS_PRELOAD=true` to restore the old header |
+| Spam-keyword blocking is now opt-in | Set `NGINX_BLOCK_SPAM=true` to restore the old behavior |
+| Mobile-split cache removed | `NGINX_CACHE_SPLIT_MOBILE` no longer exists; cache key is unified |
+| Timeout chain aligned | `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` 60->130, `NGINX_FASTCGI_READ_TIMEOUT` 300s->180s |
+| `disable_functions` no longer applies to PHP-CLI | Use `PHP_CLI_DISABLE_FUNCTIONS` if you want CLI restrictions |
+| `open_basedir` no longer includes `/proc/` | PHP code can no longer read `/proc` (security hardening) |
+
 ## All Environments
 
 ### Database
@@ -91,7 +108,7 @@ docker compose up -d
 | `WP_MAX_MEMORY_LIMIT`        | `512M`       | Maximum memory limit on Admin                       |
 | `WP_CACHE`                   | `false`      | Enable caching                                      |
 | `WP_CACHE_KEY_SALT`          | ``           | Cache key salt                                      |
-| `WP_TABLE_PREFIX`            | `wp_`        | Database table prefix — change before first install |
+| `WP_TABLE_PREFIX`            | `wp_`        | Database table prefix, change before first install |
 | `MEDIA_TRASH`                | `true`       | Enable media trash functionality                    |
 | `DISABLE_NAG_NOTICES`        | `true`       | Disable admin nag notices                           |
 | `DISABLE_WP_CRON`            | `true`       | Disable WP-Cron (handled by supercronic instead)    |
@@ -138,6 +155,18 @@ docker compose up -d
 | `NGINX_HTTP_PORT` | `80`           | HTTP port the container listens on                                    |
 | `NGINX_HTTPS_PORT`| `443`          | HTTPS port the container listens on                                   |
 | `TZ`             | `UTC`           | Timezone                                                              |
+| `FIX_OWNERSHIP`  | `true`          | At startup, `chown -R` app dirs to `APP_USER` when their owner is wrong |
+
+### Building a derived image
+
+When baking WordPress/ClassicPress files into your own image, set the owner at build time for fastest startup:
+
+```dockerfile
+FROM ghcr.io/butialabs/presshost:latest
+COPY --chown=www-data:www-data ./wordpress/ /site/press/
+```
+
+If you forget `--chown`, the init fixes ownership automatically at container start (see `FIX_OWNERSHIP`), startup just takes longer on large trees.
 
 ### PHP
 
@@ -153,12 +182,13 @@ docker compose up -d
 | `PHP_OUTPUT_BUFFERING`              | `4096`    | Output buffering size                            |
 | `PHP_PM`                            | `auto`    | Process manager type (`auto`, static, dynamic, ondemand). `auto` picks `static` for ≤2GB containers, `dynamic` otherwise. |
 | `PHP_PM_MAX_CHILDREN`               | `auto`    | Max children processes (`auto` sizes from container memory; or set a fixed integer like `50`) |
+| `PHP_PM_WORKER_MB`                  | `128`     | Assumed average worker size (MB) used by the `auto` calculation |
 | `PHP_PM_START_SERVERS`              | `10`      | Start servers (preforked workers)                |
 | `PHP_PM_MIN_SPARE_SERVERS`          | `10`      | Min spare servers                                |
 | `PHP_PM_MAX_SPARE_SERVERS`          | `35`      | Max spare servers                                |
 | `PHP_PM_MAX_REQUESTS`               | `500`     | Max requests per child (prevents memory leaks)   |
 | `PHP_PM_PROCESS_IDLE_TIMEOUT`       | `10s`     | Idle timeout for ondemand PM                     |
-| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` | `60`      | Request terminate timeout (seconds)              |
+| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` | `130`     | Kill stuck workers after N seconds (aligned with `PHP_MAX_EXECUTION_TIME=120` + grace) |
 | `PHP_FPM_LISTEN_BACKLOG`            | `65535`   | Listen queue backlog size                        |
 | `PHP_FPM_RLIMIT_FILES`              | `65535`   | Max open files limit                             |
 | `PHP_OPCACHE_ENABLE`                | `1`       | Enable OPcache                                   |
@@ -169,16 +199,20 @@ docker compose up -d
 | `PHP_OPCACHE_VALIDATE_TIMESTAMPS`   | `0`       | Validate timestamps (0 = production; redeploy/restart container to pick up code changes) |
 | `PHP_OPCACHE_JIT`                   | `off`     | JIT mode (`tracing`, `function`, `off`). Disabled by default. |
 | `PHP_OPCACHE_JIT_BUFFER_SIZE`       | `128M`    | JIT buffer size (only used when JIT is enabled)  |
-| `PHP_DISABLE_FUNCTIONS`             | *1 | Comma-separated list of disabled PHP functions (set to empty string to allow all) |
+| `PHP_OPCACHE_ENABLE_CLI`            | `0`       | Enable OPcache for PHP-CLI                       |
+| `PHP_DISABLE_FUNCTIONS`             | *1 | Comma-separated list of disabled PHP functions for **FPM** (set to empty string to allow all) |
+| `PHP_CLI_DISABLE_FUNCTIONS`         | `` | Comma-separated list for **CLI** (empty by default so WP-CLI works fully) |
 | `PHP_SESSION_COOKIE_HTTPONLY`       | `1`       | Session cookie httponly                          |
 | `PHP_SESSION_COOKIE_SECURE`         | `1`       | Session cookie secure                            |
+| `PHP_SESSION_COOKIE_SAMESITE`       | `Strict`  | Session cookie SameSite (`Strict`, `Lax`, `None`) |
 | `PHP_SESSION_USE_STRICT_MODE`       | `1`       | Session use strict mode                          |
-| `PHP_APC_ENABLED`                   | `1`       | Enable APCu                                      |
-| `PHP_APC_SHM_SIZE`                  | `64M`     | APCu shared memory size                          |
-| `PHP_APC_TTL`                       | `7200`    | APCu TTL (seconds)                               |
-| `PHP_APC_ENABLE_CLI`                | `0`       | Enable APCu for CLI                              |
+| `PHP_APCU_ENABLED`                  | `1`       | Enable APCu                                      |
+| `PHP_APCU_SHM_SIZE`                 | `64M`     | APCu shared memory size                          |
+| `PHP_APCU_TTL`                      | `7200`    | APCu TTL (seconds)                               |
+| `PHP_APCU_ENABLE_CLI`               | `0`       | Enable APCu for CLI                              |
 | `PHP_REALPATH_CACHE_SIZE`           | `4096K`   | Realpath cache size                              |
 | `PHP_REALPATH_CACHE_TTL`            | `600`     | Realpath cache TTL (seconds)                     |
+| `PHP_ERROR_REPORTING`               | `E_ALL & ~E_DEPRECATED & ~E_STRICT` | PHP error reporting level |
 
 *1 `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec`
 
@@ -196,20 +230,31 @@ docker compose up -d
 | `NGINX_FASTCGI_BUSY_BUFFERS_SIZE`   | `64k`    | FastCGI busy buffers size                         |
 | `NGINX_FASTCGI_CONNECT_TIMEOUT`     | `60s`    | FastCGI connect timeout                           |
 | `NGINX_FASTCGI_SEND_TIMEOUT`        | `60s`    | FastCGI send timeout                              |
-| `NGINX_FASTCGI_READ_TIMEOUT`        | `300s`   | FastCGI read timeout (covers long PHP operations) |
+| `NGINX_FASTCGI_READ_TIMEOUT`        | `180s`   | FastCGI read timeout                              |
 | `NGINX_KEEPALIVE_TIMEOUT`           | `65s`    | Keepalive timeout                                 |
 | `NGINX_KEEPALIVE_REQUESTS`          | `1000`   | Requests per keepalive                            |
 | `NGINX_CLIENT_BODY_TIMEOUT`         | `60s`    | Client body timeout                               |
 | `NGINX_CLIENT_HEADER_TIMEOUT`       | `30s`    | Client header timeout                             |
 | `NGINX_SEND_TIMEOUT`                | `60s`    | Send timeout                                      |
+| `NGINX_WORKER_PROCESSES`            | `auto`   | Worker processes                                  |
+| `NGINX_WORKER_CONNECTIONS`          | `65535`  | Connections per worker                            |
+| `NGINX_WORKER_RLIMIT_NOFILE`        | `65535`  | Max open files per worker                         |
+| `NGINX_RESOLVER`                    | `127.0.0.11 valid=30s` | DNS resolver for OCSP stapling (empty disables; `127.0.0.11` is Docker's embedded DNS) |
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache. When set to false, no cache directories or files are created |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
-| `NGINX_CACHE_SPLIT_MOBILE`          | `false`  | Split cache by mobile/desktop user agent          |
+| `NGINX_CACHE_VALID_OK`              | `60m`    | Cache TTL for 200/301/302 responses               |
+| `NGINX_CACHE_VALID_NOT_FOUND`       | `1m`     | Cache TTL for 404 responses                       |
+| `NGINX_CACHE_KEY_ZONE_SIZE`         | `100m`   | Shared memory zone size for cache keys (~8k keys/MB) |
 | `NGINX_GZIP_COMP_LEVEL`             | `6`      | gzip compression level (1-9)                      |
 | `NGINX_BROTLI_COMP_LEVEL`           | `4`      | brotli compression level (0-11) for dynamic content |
 | `NGINX_HTTP3`                       | `false`  | Enable HTTP/3 (QUIC) on port 443/udp              |
 | `NGINX_SERVER_NAME`                 | derived from `SITEURL` | Override `server_name` directive    |
+| `NGINX_HSTS`                        | `true`   | Emit `Strict-Transport-Security` header           |
+| `NGINX_HSTS_MAX_AGE`                | `31536000` | HSTS max-age (seconds)                          |
+| `NGINX_HSTS_SUBDOMAINS`             | `true`   | Add `includeSubDomains` to HSTS                   |
+| `NGINX_HSTS_PRELOAD`                | `false`  | Add `preload` to HSTS (only enable if you understand the commitment, see hstspreload.org) |
+| `NGINX_BLOCK_SPAM`                  | `false`  | Block pharma/spam keywords in query strings (may cause false positives on legitimate searches) |
 
 ### SSL
 
@@ -226,12 +271,10 @@ Existing files are never overwritten, so providing your own certificate (Let's E
 
 ### NGINX Cache
 
-- On container startup:
-  - Any existing NGINX cache directories are always cleaned up first
-  - This ensures a clean state when upgrading or changing cache settings
+- When `NGINX_CACHE=false` (default): no cache zone is configured and no cache files are created.
 
 - When `NGINX_CACHE=true`:
-  - Cache directories are created in `/site/cache/nginx/fastcgi/`
+  - The cache lives in `/site/cache/nginx/`
   - Cache files are generated during operation
   - The `X-FastCGI-Cache` header will be present in responses with values like `HIT`, `MISS`, or `BYPASS`
 
@@ -248,7 +291,7 @@ Two empty configuration files are included and loaded at startup. Mount your own
 | `/etc/nginx/conf.d/custom-nginx.conf`          | `http {}` block (global)          | Custom upstreams, maps, rate-limit zones, etc.   |
 | `/etc/nginx/conf.d/custom-presshost.conf`      | `server {}` block (site-level)    | Extra locations, reverse proxies, rewrites, etc. |
 
-**Example — reverse proxy at `/i/` on the same domain:**
+**Example: reverse proxy at `/i/` on the same domain:**
 
 ```yaml
 # compose.yml
@@ -295,17 +338,30 @@ PressHost ships with built-in protections that keep PHP/NGINX healthy under load
 | `NGINX_RATE_LIMIT`     | `30r/s` | Per-IP request rate (zone `global_limit`)                |
 | `NGINX_RATE_BURST`     | `60`    | Burst tolerance before 429                               |
 | `NGINX_CONN_LIMIT`     | `50`    | Max simultaneous connections per IP                      |
-| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT`  | `60`  | Kill stuck workers after N seconds              |
+| `NGINX_LOGIN_RATE_LIMIT` | `5r/m` | Per-IP rate for `wp-login.php` (zone `login_limit`)    |
+| `NGINX_LOGIN_BURST`    | `10`    | Burst tolerance on `wp-login.php` before 429             |
+| `PHP_FPM_REQUEST_TERMINATE_TIMEOUT`  | `130`  | Kill stuck workers after N seconds             |
 | `PHP_FPM_REQUEST_SLOWLOG_TIMEOUT`    | `5s`  | Log slow requests                               |
 | `PHP_FPM_EMERGENCY_RESTART_THRESHOLD`| `10`  | Crashed workers in interval to trigger master restart |
 | `PHP_FPM_EMERGENCY_RESTART_INTERVAL` | `1m`  | Interval for the emergency restart counter      |
 | `PHP_FPM_PROCESS_CONTROL_TIMEOUT`    | `10s` | Master/worker IPC timeout                       |
 
-### Custom Constants
+### Custom Constants and environment forwarding
 
-Any environment variable starting with `PRESS_` is automatically converted to a Press constant. The `PRESS_` prefix is removed and the value is passed to `wp-config.php`.
+PHP-FPM runs with `clear_env=yes`. The init script forwards environment variables into the FPM pool using **prefix rules**:
 
-> **Security note:** PHP-FPM runs with `clear_env=yes`. The init script forwards an explicit allow-list (`DB_*`, `WP_*`, `SMTP_*`, `AUTH_*`/salts, `PRESS_*`, `INSTALL_*`, `SITEURL`, `TZ`, etc.) into the pool. Variables outside that list are not exposed to PHP - `phpinfo()` will not leak unrelated container env vars.
+| Forwarded | Examples |
+| --------- | -------- |
+| `DB_*` | `DB_NAME`, `DB_PASSWORD`, `DB_HOST`, … |
+| `WP_*` | `WP_DEBUG`, `WP_REDIS_HOST`, `WP_ROCKET_*`, `WP_AI_SUPPORT`, … |
+| `SMTP_*` | `SMTP_HOST`, `SMTP_USER`, … |
+| `PRESS_*` | custom constants (see below) |
+| `INSTALL_*` | installer variables |
+| First-party list | salts (`AUTH_KEY`…`NONCE_SALT`), `SITEURL`, `TZ`, `LOGS_PATH`, `UPLOADS_PATH`, `CACHE_PATH`, `APP_PATH`, `WPLANG`, `FS_METHOD`, `FORCE_SSL_*`, `AUTOSAVE_INTERVAL`, `MEDIA_TRASH`, `DISABLE_NAG_NOTICES`, `DISABLE_WP_CRON`, `DISALLOW_FILE_*`, `AUTOMATIC_UPDATER_DISABLED`, `SAVEQUERIES` |
+
+**Not forwarded** (never visible to PHP / `phpinfo()`): `NGINX_*`, `PHP_*`, `VALKEY_*`, `HOME`, `PATH`, and any unrelated container env vars.
+
+Inside `wp-config.php`, every forwarded `WP_*` and `PRESS_*` variable is **automatically defined as a constant** (`PRESS_FOO` -> `FOO`, `WP_FOO` -> `WP_FOO`) with boolean/int coercion. Explicit `define()`s always win. 
 
 **Examples:**
 
@@ -314,6 +370,8 @@ Any environment variable starting with `PRESS_` is automatically converted to a 
 | `PRESS_GOOGLE_KEY=abc123`   | `define('GOOGLE_KEY', 'abc123')` | string  |
 | `PRESS_ENABLE_FEATURE=true` | `define('ENABLE_FEATURE', true)` | boolean |
 | `PRESS_MAX_ITEMS=50`        | `define('MAX_ITEMS', 50)`        | integer |
+| `WP_AI_SUPPORT=1`           | `define('WP_AI_SUPPORT', true)`  | boolean |
+| `WP_REDIS_HOST=valkey`      | `define('WP_REDIS_HOST', 'valkey')` | string |
 
 ### Using signed SSL
 
@@ -356,9 +414,82 @@ environment:
 Cache is automatically bypassed for logged-in users, WooCommerce cart/checkout, wp-admin, POST requests, and WordPress preview mode.
 For on-demand purge from the WordPress admin, install the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/) plugin and point it at the FastCGI cache.
 
-### Valkey Object Cache
+### CDN integration (Cloudflare & others, plugin-free)
+
+PressHost can drive CDN caching straight from the origin, no WordPress plugin required. Three independent features:
+
+#### 1. Cache headers for HTML (`NGINX_CDN_CACHE=true`)
+
+```yaml
+environment:
+  NGINX_CDN_CACHE: "true"
+```
+
+Anonymous HTML responses get:
+
+```
+Cache-Control: public, max-age=60 (browser TTL)
+CDN-Cache-Control: public, max-age=3600, stale-while-revalidate=60, stale-if-error=86400
+```
+
+Logged-in users, wp-admin, cart/checkout, POST requests and authenticated REST calls (Authorization header/X-WP-Nonce) get `no-cache, no-store` and `CDN-Cache-Control: no-store`. Error responses (4xx/5xx) never receive cache headers, so the CDN never caches error pages.
+
+On Cloudflare, create one **Cache Rule**: "Eligible for cache" and **Respect origin cache control**. Freshness is handled by TTL (`stale-while-revalidate` softens updates), no purge plugin needed.
+
+| Variable                    | Default | Description                              |
+| --------------------------- | ------- | ---------------------------------------- |
+| `NGINX_CDN_CACHE`           | `false` | Emit `CDN-Cache-Control`/`Cache-Control` for HTML |
+| `NGINX_CDN_EDGE_TTL`        | `3600`  | CDN max-age (seconds)                    |
+| `NGINX_CDN_BROWSER_TTL`     | `60`    | Browser max-age (seconds)                |
+| `NGINX_CDN_SWR`             | `60`    | stale-while-revalidate (seconds)         |
+| `NGINX_CDN_STALE_IF_ERROR`  | `86400` | Serve stale content if origin errors (seconds) |
+
+#### 2. Real visitor IP behind Cloudflare (`NGINX_CLOUDFLARE_REAL_IP=true`)
+
+At boot, the init fetches the current IP ranges from `cloudflare.com/ips-v4` and `ips-v6` and configures `set_real_ip_from` automatically (a bundled snapshot is used if the fetch fails). Without this, rate limits, logs and the IP seen by WordPress would all be the CDN's, all visitors would share one rate-limit bucket.
+
+| Variable                    | Default           | Description                          |
+| --------------------------- | ----------------- | ------------------------------------ |
+| `NGINX_CLOUDFLARE_REAL_IP`  | `false`           | Auto-configure Cloudflare IP ranges  |
+| `NGINX_REAL_IP_HEADER`      | `X-Forwarded-For` | Header carrying the real IP (`CF-Connecting-IP` also works) |
+| `NGINX_REAL_IP_FROM`        | ``                | Extra space-separated CIDRs (other CDNs/proxies) |
+
+#### 3. Origin pull protection (`NGINX_ORIGIN_AUTH_SECRET`)
+
+```yaml
+environment:
+  NGINX_ORIGIN_AUTH_SECRET: "a-long-random-string"
+```
+
+When set, requests from public networks must carry the header `X-Origin-Auth: <secret>` or they get `403`, preventing attackers from bypassing the CDN/WAF and hitting the origin directly. Configure the CDN to send the header (Cloudflare: Transform Rule -> Modify Request Header). Private networks (RFC1918, localhost) are always allowed so healthchecks keep working.
+
+### Redis/Valkey Object Cache
 
 Stores WordPress object-cache data (database query results, transients) in Valkey so they survive across requests and processes.
+
+#### Option A: Local Valkey (built into the image)
+
+```yaml
+environment:
+  WP_CACHE: "true"
+  VALKEY_ENABLED: "true"
+```
+
+With `VALKEY_ENABLED=true`, the init auto-wires `WP_REDIS_HOST=127.0.0.1` and `WP_REDIS_PORT` (unless you set them yourself). Then install and activate the [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin inside WordPress **the plugin is still required** to create the `object-cache.php` drop-in.
+
+| Variable                 | Default      | Description                                  |
+| ------------------------ | ------------ | -------------------------------------------- |
+| `VALKEY_ENABLED`         | `false`      | Run a local Valkey server inside the container |
+| `VALKEY_BIND`            | `127.0.0.1`  | Bind address (localhost-only by default)     |
+| `VALKEY_PORT`            | `6379`       | Port                                         |
+| `VALKEY_MAXMEMORY`       | `128mb`      | Memory limit (counted in the PHP-FPM auto-sizing reserve) |
+| `VALKEY_MAXMEMORY_POLICY`| `allkeys-lru`| Eviction policy                              |
+| `VALKEY_SAVE`            | `` (empty)   | RDB save points, e.g. `"900 1 300 10"`. Empty = no persistence (cache-only) |
+| `VALKEY_PASSWORD`        | ``           | `requirepass` (also wired to `WP_REDIS_PASSWORD`) |
+
+> Never set `VALKEY_BIND` to a non-localhost address without `VALKEY_PASSWORD`!
+
+#### Option B: External Valkey (recommended for high traffic)
 
 ```yaml
 services:
@@ -377,16 +508,14 @@ services:
       - presshost
 ```
 
-Then install and activate the [Redis Object Cache](https://wordpress.org/plugins/redis-cache/) plugin inside WordPress.
-
-### OPcache JIT (PHP 8.4)
+### OPcache JIT
 
 PHP 8.4 includes a JIT compiler that can improve throughput on CPU-bound workloads (WooCommerce, page builders, image processing).
 It is disabled by default because a small number of plugins with legacy code may behave incorrectly with JIT enabled.
 
 ```yaml
 environment:
-  PHP_OPCACHE_JIT: "tracing"       # recommended mode for WordPress
+  PHP_OPCACHE_JIT: "tracing" # recommended mode for WordPress
   PHP_OPCACHE_JIT_BUFFER_SIZE: "128M"
 ```
 
@@ -402,7 +531,7 @@ docker exec -it presshost presshost
 
 When **no WordPress/ClassicPress** is installed yet, the menu lets you:
 
-1. **Install WordPress**: downloads `wordpress.org/latest.zip` (or a specific version), unpacks it to `/site/press`, generates `wp-config.php` + `wp-secrets.php` (locally generated salts, no external API), runs `wp core install`, and resets ownership of the install directory to `www-data:www-data`.
+1. **Install WordPress**: downloads `wordpress.org/latest.zip` (or a specific version), unpacks it to `/site/press`, generates `wp-config.php` and `wp-secrets.php` (locally generated salts, no external API), runs `wp core install`, and resets ownership of the install directory to `www-data:www-data`.
 2. **Install ClassicPress**: same flow, pulling from the official ClassicPress release archive.
 
 When a site is **already installed**, the menu offers:
@@ -426,6 +555,14 @@ docker exec -e PRESSHOST_DEFAULT_ACTION=wordpress \
 
 ```bash
 docker exec -u 0 presshost presshost fix-perms
+```
+
+#### safe-chown
+
+`safe-chown <path> [path...]` fixes ownership to `APP_USER:APP_GROUP` efficiently: healthy trees are an instant no-op (top-level probe), and dirty trees are walked chowning **only** wrong-owned entries in batches (no per-file forks, no wasted syscalls). It runs automatically at startup when `FIX_OWNERSHIP=true` and is used by `presshost fix-perms`. Manual use:
+
+```bash
+docker exec presshost safe-chown /site/press /site/uploads
 ```
 
 ---
