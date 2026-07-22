@@ -73,7 +73,7 @@ jobs:
             -e DB_PASSWORD="$DB_PASSWORD" \
             -e DB_HOST="$DB_CONTAINER" \
             -e PHP_PM_MAX_CHILDREN=auto \
-            -e NGINX_CACHE_SPLIT_MOBILE=true \
+            -e WP_AI_SUPPORT=1 \
             -e NGINX_GZIP_COMP_LEVEL=5 \
             -e NGINX_BROTLI_COMP_LEVEL=4 \
             -e LOG_LEVEL=DEBUG \
@@ -213,27 +213,27 @@ jobs:
           EXPLOIT_CONF=$(dexec "$CONTAINER_NAME" cat /etc/nginx/conf.d/block-exploits.conf)
           assert_contains "$EXPLOIT_CONF" "block_sql_injections" "block-exploits.conf is present and loaded"
 
-          # SQL injection → 403
+          # SQL injection -> 403
           HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
             "$BASE_URL/?id=1%20union%20all%20select%201,2,3--" || echo "000")
           if [ "$HTTP_CODE" = "403" ]; then pass "SQL injection blocked (403)"; else fail "SQL injection not blocked (got $HTTP_CODE)"; fi
 
-          # Path traversal → 403
+          # Path traversal -> 403
           HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
             "$BASE_URL/?file=../../etc/passwd" || echo "000")
           if [ "$HTTP_CODE" = "403" ]; then pass "Path traversal blocked (403)"; else fail "Path traversal not blocked (got $HTTP_CODE)"; fi
 
-          # XSS / common exploit → 403
+          # XSS / common exploit -> 403
           HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
             "$BASE_URL/?q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E" || echo "000")
           if [ "$HTTP_CODE" = "403" ]; then pass "XSS exploit blocked (403)"; else fail "XSS exploit not blocked (got $HTTP_CODE)"; fi
 
-          # Spam keyword → 403
+          # Spam keyword -> 403
           HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
             "$BASE_URL/?q=buy+viagra+online" || echo "000")
           if [ "$HTTP_CODE" = "403" ]; then pass "Spam keyword blocked (403)"; else fail "Spam keyword not blocked (got $HTTP_CODE)"; fi
 
-          # Bad user agent → 403
+          # Bad user agent -> 403
           HTTP_CODE=$(curl -g -s -o /dev/null -w "%{http_code}" --max-time 5 \
             -A "libwww-perl" "$BASE_URL/" || echo "000")
           if [ "$HTTP_CODE" = "403" ]; then pass "Bad user agent blocked (403)"; else fail "Bad user agent not blocked (got $HTTP_CODE)"; fi
@@ -283,31 +283,209 @@ jobs:
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
-          step "Mobile-split cache"
+          step "NGINX Cache + CDN headers"
           # ──────────────────────────────────────────────────────────────────────
-          for split in true false; do
-            TMP_NAME="${CONTAINER_NAME}-mobile-${split}"
-            docker rm -f "$TMP_NAME" 2>/dev/null || true
-            docker run -d --name "$TMP_NAME" \
-              --network "$NETWORK" \
-              -e SITEURL=localhost \
-              -e DB_HOST="$DB_CONTAINER" \
-              -e DB_NAME="$DB_NAME" \
-              -e DB_USER="$DB_USER" \
-              -e DB_PASSWORD="$DB_PASSWORD" \
-              -e NGINX_CACHE=true \
-              -e NGINX_CACHE_SPLIT_MOBILE="$split" \
-              "$IMAGE_NAME" >/dev/null
-            sleep 8
-            CP=$(dexec "$TMP_NAME" cat /etc/nginx/conf.d/cache-path.conf)
-            if [ "$split" = "true" ]; then
-              assert_contains "$CP" 'is_mobile' "cache_key includes is_mobile when split=true"
-            else
-              assert_not_contains "$CP" 'is_mobile' "cache_key excludes is_mobile when split=false"
-            fi
-            docker rm -f "$TMP_NAME" 2>/dev/null || true
-          done
+          docker rm -f "${CONTAINER_NAME}-cdn" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-cdn" \
+            --network "$NETWORK" \
+            -e SITEURL=http://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            -e NGINX_CACHE=true \
+            -e NGINX_CDN_CACHE=true \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          R1=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -D - -o /dev/null http://localhost/")
+          assert_contains "$R1" "CDN-Cache-Control: public, max-age=3600" "anonymous page gets CDN-Cache-Control"
+          assert_contains "$R1" "Cache-Control: public, max-age=60" "anonymous page gets browser Cache-Control"
+          assert_contains "$R1" "X-FastCGI-Cache: MISS" "first request is a cache MISS"
+
+          R2=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -D - -o /dev/null http://localhost/")
+          assert_contains "$R2" "X-FastCGI-Cache: HIT" "second request is a cache HIT"
+
+          R3=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -D - -o /dev/null -H 'Cookie: wordpress_logged_in_x=1' http://localhost/")
+          assert_contains "$R3" "CDN-Cache-Control: no-store" "logged-in request gets no-store (CDN)"
+          assert_contains "$R3" "no-cache, no-store, must-revalidate, private" "logged-in request gets no-store (browser)"
+
+          R4=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -D - -o /dev/null -H 'Authorization: Basic dXNlcjpwYXNz' http://localhost/wp-json/")
+          assert_contains "$R4" "CDN-Cache-Control: no-store" "authenticated REST call gets no-store"
+
+          docker rm -f "${CONTAINER_NAME}-cdn" 2>/dev/null || true
           end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "HSTS toggle + HTTPS redirect"
+          # ──────────────────────────────────────────────────────────────────────
+          docker rm -f "${CONTAINER_NAME}-hsts" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-hsts" \
+            --network "$NETWORK" \
+            -e SITEURL=https://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            -e NGINX_HSTS=false \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          HSTS_OFF=$(dexec "${CONTAINER_NAME}-hsts" sh -c "curl -sk -D - -o /dev/null https://localhost/ | grep -ci strict-transport || true")
+          if [ "$HSTS_OFF" = "0" ]; then pass "HSTS absent when NGINX_HSTS=false"; else fail "HSTS should be absent (got $HSTS_OFF headers)"; fi
+
+          REDIR=$(dexec "${CONTAINER_NAME}-hsts" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost/")
+          if [ "$REDIR" = "301" ]; then pass "HTTP > HTTPS redirect returns 301"; else fail "expected 301 redirect, got $REDIR"; fi
+
+          docker rm -f "${CONTAINER_NAME}-hsts" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Docker secrets (_FILE) resolution"
+          # ──────────────────────────────────────────────────────────────────────
+          echo -n "s3cret-from-file" > /tmp/db_password_test
+          docker rm -f "${CONTAINER_NAME}-file" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-file" \
+            --network "$NETWORK" \
+            -v /tmp/db_password_test:/run/secrets/db_password:ro \
+            -e SITEURL=http://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" -e DB_USER="$DB_USER" \
+            -e DB_PASSWORD_FILE=/run/secrets/db_password \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          POOL_FILE=$(dexec "${CONTAINER_NAME}-file" sh -c "cat /etc/php/*/fpm/pool.d/www.conf")
+          assert_contains    "$POOL_FILE" 'env[DB_PASSWORD] = "s3cret-from-file"' "DB_PASSWORD resolved from _FILE"
+          assert_not_contains "$POOL_FILE" 'env[DB_PASSWORD_FILE]' "_FILE var itself not forwarded to pool"
+
+          docker rm -f "${CONTAINER_NAME}-file" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "open_basedir hardening (/proc not readable)"
+          # ──────────────────────────────────────────────────────────────────────
+          dexec "$CONTAINER_NAME" sh -c 'echo "<?php var_dump(@file_get_contents(\"/proc/1/environ\"));" > /site/press/proc-test.php' >/dev/null
+          PROC_OUT=$(curl -s --max-time 5 "$BASE_URL/proc-test.php" || true)
+          assert_contains "$PROC_OUT" "bool(false)" "/proc/1/environ not readable via web (open_basedir)"
+          dexec "$CONTAINER_NAME" rm -f /site/press/proc-test.php >/dev/null
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Valkey local server"
+          # ──────────────────────────────────────────────────────────────────────
+          docker rm -f "${CONTAINER_NAME}-valkey" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-valkey" \
+            --network "$NETWORK" \
+            -e SITEURL=http://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            -e VALKEY_ENABLED=true \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          VPING=$(dexec "${CONTAINER_NAME}-valkey" valkey-cli ping)
+          assert_contains "$VPING" "PONG" "valkey-server responds to ping"
+
+          VUSER=$(dexec "${CONTAINER_NAME}-valkey" sh -c 'ps -eo user,args | grep [v]alkey-server | awk "{print \$1}"')
+          assert_contains "$VUSER" "$APP_USER" "valkey-server runs as $APP_USER"
+
+          VPOOL=$(dexec "${CONTAINER_NAME}-valkey" sh -c "cat /etc/php/*/fpm/pool.d/www.conf")
+          assert_contains "$VPOOL" 'env[WP_REDIS_HOST] = "127.0.0.1"' "VALKEY_ENABLED auto-wires WP_REDIS_HOST"
+          assert_contains "$VPOOL" 'env[WP_REDIS_PORT] = "6379"' "VALKEY_ENABLED auto-wires WP_REDIS_PORT"
+
+          VHC=$(dexec "${CONTAINER_NAME}-valkey" /etc/s6-overlay/scripts/healthcheck-all && echo ok)
+          assert_contains "$VHC" "ok" "composite healthcheck passes with valkey enabled"
+
+          docker rm -f "${CONTAINER_NAME}-valkey" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "HTTP/3 (QUIC) support"
+          # ──────────────────────────────────────────────────────────────────────
+          docker rm -f "${CONTAINER_NAME}-h3" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-h3" \
+            --network "$NETWORK" \
+            -e SITEURL=https://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            -e NGINX_HTTP3=true \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          H3T=$(dexec "${CONTAINER_NAME}-h3" nginx -t)
+          assert_contains "$H3T" "test is successful" "nginx -t passes with NGINX_HTTP3=true"
+
+          H3C=$(dexec "${CONTAINER_NAME}-h3" sh -c "cat /etc/nginx/sites-enabled/presshost.conf")
+          assert_contains "$H3C" "quic reuseport" "QUIC listen directive present"
+          assert_contains "$H3C" "Alt-Svc" "Alt-Svc header advertised"
+
+          docker rm -f "${CONTAINER_NAME}-h3" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Derived image ownership remediation"
+          # ──────────────────────────────────────────────────────────────────────
+          mkdir -p /tmp/derived/press
+          echo "<?php echo 'baked';" > /tmp/derived/press/index.php
+          printf 'FROM %s\nCOPY press/ /site/press/\n' "$IMAGE_NAME" > /tmp/derived/Dockerfile
+          docker build -t presshost-derived-test /tmp/derived >/dev/null
+
+          docker rm -f "${CONTAINER_NAME}-derived" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-derived" \
+            --network "$NETWORK" \
+            -e SITEURL=http://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            presshost-derived-test >/dev/null
+          sleep 8
+
+          BAKED_OWNER=$(dexec "${CONTAINER_NAME}-derived" stat -c '%U' /site/press/index.php)
+          if [ "$BAKED_OWNER" = "$APP_USER" ]; then
+            pass "root-owned baked files chowned to $APP_USER at startup"
+          else
+            fail "baked index.php owner expected $APP_USER, got $BAKED_OWNER"
+          fi
+
+          BAKED_BODY=$(dexec "${CONTAINER_NAME}-derived" sh -c "curl -s http://localhost/")
+          assert_contains "$BAKED_BODY" "baked" "derived image serves baked PHP file"
+
+          docker rm -f "${CONTAINER_NAME}-derived" 2>/dev/null || true
+          docker rmi presshost-derived-test 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Generated file ownership"
+          # ──────────────────────────────────────────────────────────────────────
+          SECRETS_OWNER=$(dexec "$CONTAINER_NAME" stat -c '%U:%G' /site/press/wp-secrets.php)
+          if [ "$SECRETS_OWNER" = "$APP_USER:$APP_GROUP" ]; then
+            pass "init-generated wp-secrets.php owned by $APP_USER:$APP_GROUP"
+          else
+            fail "wp-secrets.php owner expected $APP_USER:$APP_GROUP, got $SECRETS_OWNER"
+          fi
+          SECRETS_PERMS=$(dexec "$CONTAINER_NAME" stat -c '%a' /site/press/wp-secrets.php)
+          if [ "$SECRETS_PERMS" = "640" ]; then
+            pass "wp-secrets.php has 640 permissions"
+          else
+            fail "wp-secrets.php expected 640, got $SECRETS_PERMS"
+          fi
+          INDEX_OWNER=$(dexec "$CONTAINER_NAME" stat -c '%U' /site/press/index.php)
+          if [ "$INDEX_OWNER" = "$APP_USER" ]; then
+            pass "default index.php owned by $APP_USER"
+          else
+            fail "default index.php expected $APP_USER, got $INDEX_OWNER"
+          fi
+
+          SAFE_OK=$(dexec "$CONTAINER_NAME" sh -c "safe-chown /site/press && echo ok")
+          assert_contains "$SAFE_OK" "ok" "safe-chown exits 0 on already-correct tree"
+
+          SAFE_FIX=$(dexec "$CONTAINER_NAME" sh -c "touch /site/press/.ownertest && chown root:root /site/press/.ownertest && safe-chown /site/press >/dev/null 2>&1 && stat -c '%U' /site/press/.ownertest; rm -f /site/press/.ownertest")
+          assert_contains "$SAFE_FIX" "$APP_USER" "safe-chown fixes a single root-owned file"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "WP_* auto-constants in wp-config"
+          # ──────────────────────────────────────────────────────────────────────
+          WPC_TEST=$(dexec "$CONTAINER_NAME" sh -c "sed \"s|require_once ABSPATH . 'wp-settings.php';|var_dump(WP_AI_SUPPORT, GOOGLE_KEY);|\" /tmp/wp-config.php > /tmp/wpc-run.php && php /tmp/wpc-run.php")
+          assert_contains "$WPC_TEST" "bool(true)" "WP_AI_SUPPORT=1 auto-defined as true"
+          assert_contains "$WPC_TEST" 'string(6) "abc123"' "PRESS_GOOGLE_KEY auto-defined as GOOGLE_KEY"
+          end_step
+
 
           # ──────────────────────────────────────────────────────────────────────
           step "PHP configurations"
@@ -319,8 +497,10 @@ jobs:
           assert_contains    "$POOL" 'env[DB_PASSWORD]'         "DB_PASSWORD forwarded"
           assert_contains    "$POOL" "env[SITEURL] = \"$BASE_URL\"" "SITEURL forwarded"
           assert_contains    "$POOL" 'env[PRESS_GOOGLE_KEY]'    "PRESS_* forwarded to PHP"
-          assert_not_contains "$POOL" 'env[NGINX_CACHE]'        "NGINX_* not forwarded to PHP (allow-list)"
-          assert_not_contains "$POOL" 'env[PATH]'               "PATH not forwarded (allow-list)"
+          assert_contains    "$POOL" 'env[WP_AI_SUPPORT]'       "WP_* forwarded to PHP (prefix rule)"
+          assert_not_contains "$POOL" 'env[NGINX_CACHE]'        "NGINX_* not forwarded to PHP"
+          assert_not_contains "$POOL" 'env[PATH]'               "PATH not forwarded"
+          assert_not_contains "$POOL" 'env[VALKEY_PASSWORD]'    "VALKEY_* not forwarded to PHP"
 
           FPM_GLOBAL=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/php-fpm.conf")
           assert_contains "$FPM_GLOBAL" "emergency_restart_threshold" "emergency_restart_threshold present"
@@ -329,11 +509,11 @@ jobs:
           INI=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/conf.d/99-presshost.ini")
           assert_contains "$INI" "opcache.validate_timestamps = 0" "OPcache validate_timestamps=0"
           assert_contains "$INI" "disable_functions"               "disable_functions present"
-          assert_contains "$INI" "shell_exec"                      "shell_exec listed in disable_functions"
+          assert_contains "$INI" "shell_exec"                      "shell_exec listed in disable_functions (FPM)"
 
-          PHP_CHECK=$(dexec "$CONTAINER_NAME" php -r \
-            "echo function_exists('shell_exec') && !in_array('shell_exec', explode(',', ini_get('disable_functions'))) ? 'enabled' : 'disabled';")
-          assert_contains "$PHP_CHECK" "disabled" "shell_exec disabled at runtime"
+          PHP_CLI_CHECK=$(dexec "$CONTAINER_NAME" php -r \
+            "echo ini_get('disable_functions') === '' ? 'empty' : 'set';")
+          assert_contains "$PHP_CLI_CHECK" "empty" "disable_functions empty in CLI (WP-CLI fully functional)"
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
@@ -484,5 +664,8 @@ jobs:
       - name: 🧹 Cleanup containers
         if: always()
         run: |
-          docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" 2>/dev/null || true
+          docker rm -f "$CONTAINER_NAME" "$DB_CONTAINER" \
+            "${CONTAINER_NAME}-cdn" "${CONTAINER_NAME}-hsts" "${CONTAINER_NAME}-file" \
+            "${CONTAINER_NAME}-valkey" "${CONTAINER_NAME}-h3" "${CONTAINER_NAME}-derived" 2>/dev/null || true
           docker network rm "$NETWORK" 2>/dev/null || true
+          docker rmi presshost-derived-test 2>/dev/null || true
