@@ -43,12 +43,13 @@ ENV TZ=UTC \
     PHP_OUTPUT_BUFFERING=4096 \
     PHP_PM=auto \
     PHP_PM_MAX_CHILDREN=auto \
+    PHP_PM_WORKER_MB=128 \
     PHP_PM_START_SERVERS=10 \
     PHP_PM_MIN_SPARE_SERVERS=10 \
     PHP_PM_MAX_SPARE_SERVERS=35 \
     PHP_PM_MAX_REQUESTS=500 \
     PHP_PM_PROCESS_IDLE_TIMEOUT=10s \
-    PHP_FPM_REQUEST_TERMINATE_TIMEOUT=60 \
+    PHP_FPM_REQUEST_TERMINATE_TIMEOUT=130 \
     PHP_FPM_REQUEST_SLOWLOG_TIMEOUT=5s \
     PHP_FPM_EMERGENCY_RESTART_THRESHOLD=10 \
     PHP_FPM_EMERGENCY_RESTART_INTERVAL=1m \
@@ -63,16 +64,20 @@ ENV TZ=UTC \
     PHP_OPCACHE_VALIDATE_TIMESTAMPS=0 \
     PHP_OPCACHE_JIT=off \
     PHP_OPCACHE_JIT_BUFFER_SIZE=128M \
+    PHP_OPCACHE_ENABLE_CLI=0 \
     PHP_DISABLE_FUNCTIONS="exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec" \
+    PHP_CLI_DISABLE_FUNCTIONS="" \
     PHP_SESSION_COOKIE_HTTPONLY=1 \
     PHP_SESSION_COOKIE_SECURE=1 \
+    PHP_SESSION_COOKIE_SAMESITE=Strict \
     PHP_SESSION_USE_STRICT_MODE=1 \
-    PHP_APC_ENABLED=1 \
-    PHP_APC_SHM_SIZE=64M \
-    PHP_APC_TTL=7200 \
-    PHP_APC_ENABLE_CLI=0 \
+    PHP_APCU_ENABLED=1 \
+    PHP_APCU_SHM_SIZE=64M \
+    PHP_APCU_TTL=7200 \
+    PHP_APCU_ENABLE_CLI=0 \
     PHP_REALPATH_CACHE_SIZE=4096K \
     PHP_REALPATH_CACHE_TTL=600 \
+    PHP_ERROR_REPORTING="E_ALL & ~E_DEPRECATED & ~E_STRICT" \
     NGINX_CLIENT_MAX_BODY_SIZE=64m \
     NGINX_CACHE=false \
     NGINX_CACHE_MAX_SIZE=512m \
@@ -149,6 +154,8 @@ RUN set -eux; \
         arm64) S6_ARCH="aarch64"; SUPERCRONIC_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
+    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
+    chmod +x /usr/sbin/policy-rc.d; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         apt-transport-https \

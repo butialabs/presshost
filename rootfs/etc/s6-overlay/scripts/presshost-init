@@ -24,6 +24,22 @@ set_default() {
     export "${name}=${!name:-${default}}"
 }
 
+# Core
+set_default LOG_LEVEL WARN
+set_default SITEURL ""
+set_default FIX_OWNERSHIP true
+set_default TZ UTC
+set_default PHP_VERSION 8.4
+set_default APP_PATH /site/press
+set_default APP_USER www-data
+set_default APP_GROUP www-data
+set_default UPLOADS_PATH /site/uploads
+set_default CACHE_PATH /site/cache
+set_default LOGS_PATH /site/logs
+set_default LOG_MAX_SIZE 10M
+set_default LOG_MAX_AGE 7
+set_default FIX_OWNERSHIP true
+
 # SSL
 set_default SSL_CERT_PATH /site/ssl/server.crt
 set_default SSL_PRIVATE_PATH /site/ssl/server.key
@@ -88,6 +104,82 @@ set_default NGINX_CLOUDFLARE_REAL_IP false
 set_default NGINX_REAL_IP_HEADER X-Forwarded-For
 set_default NGINX_REAL_IP_FROM ""
 set_default NGINX_ORIGIN_AUTH_SECRET ""
+
+# PHP
+set_default PHP_MAX_EXECUTION_TIME 120
+set_default PHP_MAX_INPUT_TIME 120
+set_default PHP_MAX_INPUT_VARS 3000
+set_default PHP_MEMORY_LIMIT 512M
+set_default PHP_POST_MAX_SIZE 64M
+set_default PHP_UPLOAD_MAX_FILESIZE 64M
+set_default PHP_DEFAULT_SOCKET_TIMEOUT 60
+set_default PHP_OUTPUT_BUFFERING 4096
+set_default PHP_PM auto
+set_default PHP_PM_MAX_CHILDREN auto
+set_default PHP_PM_START_SERVERS 10
+set_default PHP_PM_MIN_SPARE_SERVERS 10
+set_default PHP_PM_MAX_SPARE_SERVERS 35
+set_default PHP_PM_MAX_REQUESTS 500
+set_default PHP_PM_PROCESS_IDLE_TIMEOUT 10s
+set_default PHP_FPM_REQUEST_TERMINATE_TIMEOUT 130
+set_default PHP_FPM_REQUEST_SLOWLOG_TIMEOUT 5s
+set_default PHP_FPM_EMERGENCY_RESTART_THRESHOLD 10
+set_default PHP_FPM_EMERGENCY_RESTART_INTERVAL 1m
+set_default PHP_FPM_PROCESS_CONTROL_TIMEOUT 10s
+set_default PHP_FPM_LISTEN_BACKLOG 65535
+set_default PHP_FPM_RLIMIT_FILES 65535
+set_default PHP_OPCACHE_ENABLE 1
+set_default PHP_OPCACHE_MEMORY 256
+set_default PHP_OPCACHE_INTERNED_STRINGS 16
+set_default PHP_OPCACHE_MAX_FILES 20000
+set_default PHP_OPCACHE_REVALIDATE_FREQ 2
+set_default PHP_OPCACHE_VALIDATE_TIMESTAMPS 0
+set_default PHP_OPCACHE_JIT off
+set_default PHP_OPCACHE_JIT_BUFFER_SIZE 128M
+set_default PHP_SESSION_COOKIE_HTTPONLY 1
+set_default PHP_SESSION_COOKIE_SECURE 1
+set_default PHP_SESSION_COOKIE_SAMESITE Strict
+set_default PHP_SESSION_USE_STRICT_MODE 1
+set_default PHP_APCU_ENABLED 1
+set_default PHP_APCU_SHM_SIZE 64M
+set_default PHP_APCU_TTL 7200
+set_default PHP_APCU_ENABLE_CLI 0
+set_default PHP_REALPATH_CACHE_SIZE 4096K
+set_default PHP_REALPATH_CACHE_TTL 600
+set_default PHP_ERROR_REPORTING "E_ALL & ~E_DEPRECATED & ~E_STRICT"
+set_default PHP_DISABLE_FUNCTIONS "exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec"
+set_default PHP_CLI_DISABLE_FUNCTIONS ""
+set_default PHP_OPCACHE_ENABLE_CLI 0
+set_default PHP_PM_WORKER_MB 128
+
+# Valkey (local object cache server)
+set_default VALKEY_ENABLED false
+set_default VALKEY_BIND 127.0.0.1
+set_default VALKEY_PORT 6379
+set_default VALKEY_MAXMEMORY 128mb
+set_default VALKEY_MAXMEMORY_POLICY allkeys-lru
+set_default VALKEY_SAVE ""
+set_default VALKEY_PASSWORD ""
+
+validate_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
+validate_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 )); }
+validate_size() { [[ "$1" =~ ^[0-9]+([kKmMgG][bB]?)?$ ]]; }
+
+validate_port "$NGINX_HTTP_PORT"        || { error "Invalid NGINX_HTTP_PORT: $NGINX_HTTP_PORT"; exit 1; }
+validate_port "$NGINX_HTTPS_PORT"       || { error "Invalid NGINX_HTTPS_PORT: $NGINX_HTTPS_PORT"; exit 1; }
+validate_port "$VALKEY_PORT"            || { error "Invalid VALKEY_PORT: $VALKEY_PORT"; exit 1; }
+validate_size "${PHP_MEMORY_LIMIT:-512M}"      || { error "Invalid PHP_MEMORY_LIMIT: $PHP_MEMORY_LIMIT"; exit 1; }
+validate_size "$NGINX_CACHE_MAX_SIZE"   || { error "Invalid NGINX_CACHE_MAX_SIZE: $NGINX_CACHE_MAX_SIZE"; exit 1; }
+validate_positive_int "$PHP_PM_WORKER_MB"      || { error "Invalid PHP_PM_WORKER_MB: $PHP_PM_WORKER_MB"; exit 1; }
+if [[ "${PHP_PM_MAX_CHILDREN:-auto}" != "auto" ]]; then
+    validate_positive_int "$PHP_PM_MAX_CHILDREN" || { error "Invalid PHP_PM_MAX_CHILDREN: $PHP_PM_MAX_CHILDREN"; exit 1; }
+fi
+[[ "${PHP_PM:-auto}" =~ ^(auto|static|dynamic|ondemand)$ ]] || { error "Invalid PHP_PM: ${PHP_PM}"; exit 1; }
+if [[ -n "$NGINX_ORIGIN_AUTH_SECRET" && ! "$NGINX_ORIGIN_AUTH_SECRET" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+    error "NGINX_ORIGIN_AUTH_SECRET contains invalid characters (allowed: A-Za-z0-9._~-)"
+    exit 1
+fi
+
 case "${LOG_LEVEL^^}" in
     ERROR) NGINX_LOG_LEVEL=error;  PHP_FPM_LOG_LEVEL=error ;;
     WARN)  NGINX_LOG_LEVEL=warn;   PHP_FPM_LOG_LEVEL=warning ;;
@@ -224,7 +316,17 @@ if [[ "$VALKEY_ENABLED" == "true" ]]; then
     fi
 fi
 
-# Auto Configurations
+parse_size_mb() {
+    local v="${1,,}"
+    if [[ "$v" =~ ^([0-9]+)g ]]; then
+        echo $(( BASH_REMATCH[1] * 1024 ))
+    elif [[ "$v" =~ ^([0-9]+) ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo 0
+    fi
+}
+
 get_mem_limit_mb() {
     local v
     if [[ -r /sys/fs/cgroup/memory.max ]]; then
@@ -240,14 +342,17 @@ get_mem_limit_mb() {
 MEM_LIMIT_MB=$(get_mem_limit_mb)
 
 if [[ "${PHP_PM_MAX_CHILDREN:-}" == "auto" ]]; then
-    worker_mb=128
+    worker_mb="${PHP_PM_WORKER_MB}"
     reserve_mb=512
+    if [[ "$VALKEY_ENABLED" == "true" ]]; then
+        reserve_mb=$(( reserve_mb + $(parse_size_mb "$VALKEY_MAXMEMORY") ))
+    fi
     usable=$(( MEM_LIMIT_MB - reserve_mb ))
     (( usable < worker_mb )) && usable=$worker_mb
     PHP_PM_MAX_CHILDREN=$(( usable / worker_mb ))
     (( PHP_PM_MAX_CHILDREN < 4 )) && PHP_PM_MAX_CHILDREN=4
     (( PHP_PM_MAX_CHILDREN > 200 )) && PHP_PM_MAX_CHILDREN=200
-    info "Auto-calculated PHP_PM_MAX_CHILDREN=${PHP_PM_MAX_CHILDREN}"
+    info "Auto-calculated PHP_PM_MAX_CHILDREN=${PHP_PM_MAX_CHILDREN} (worker=${worker_mb}MB, reserve=${reserve_mb}MB)"
 fi
 export PHP_PM_MAX_CHILDREN
 
@@ -278,16 +383,12 @@ unset _max
 
 build_pool_env_block() {
     local exact_keys=(
-        DB_NAME DB_USER DB_PASSWORD DB_HOST DB_CHARSET DB_COLLATE
-        WP_SITEURL WP_HOME WP_ENVIRONMENT_TYPE WP_DEBUG WP_DEBUG_LOG WP_DEBUG_DISPLAY
-        WP_MEMORY_LIMIT WP_MAX_MEMORY_LIMIT WP_CACHE WP_CACHE_KEY_SALT WP_POST_REVISIONS
+        AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY
+        AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT
+        SITEURL TZ LOGS_PATH UPLOADS_PATH CACHE_PATH APP_PATH
         WPLANG FS_METHOD FORCE_SSL_ADMIN FORCE_SSL_LOGIN
         AUTOSAVE_INTERVAL MEDIA_TRASH DISABLE_NAG_NOTICES DISABLE_WP_CRON
         DISALLOW_FILE_EDIT DISALLOW_FILE_MODS AUTOMATIC_UPDATER_DISABLED SAVEQUERIES
-        SMTP_USER SMTP_PASS SMTP_HOST SMTP_FROM SMTP_NAME SMTP_PORT SMTP_SECURE SMTP_AUTH SMTP_DEBUG
-        AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY
-        AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT
-        SITEURL TZ LOGS_PATH UPLOADS_PATH CACHE_PATH APP_PATH WP_TABLE_PREFIX
     )
     local key value seen_keys=":"
 
@@ -295,28 +396,36 @@ build_pool_env_block() {
         value="${!key:-}"
         seen_keys+="${key}:"
         if [[ -n "$value" ]]; then
+            if [[ "$value" == *$'\n'* ]]; then
+                warning "env $key contains newlines; not forwarded to PHP-FPM pool" >&2
+                continue
+            fi
             value="${value//\"/\\\"}"
             printf 'env[%s] = "%s"\n' "$key" "$value"
         fi
     done
 
-    # Forward all PRESS_* and INSTALL_* vars (constants for wp-config.php)
     while IFS='=' read -r key value; do
         [[ -z "$key" ]] && continue
         case "$key" in
-            PRESS_*|INSTALL_*) ;;
+            DB_*|WP_*|SMTP_*|PRESS_*|INSTALL_*) ;;
             *) continue ;;
         esac
+        [[ "$key" == *_FILE ]] && continue
         case "$seen_keys" in
             *":${key}:"*) continue ;;
         esac
         seen_keys+="${key}:"
+        if [[ "$value" == *$'\n'* ]]; then
+            warning "env $key contains newlines; not forwarded to PHP-FPM pool" >&2
+            continue
+        fi
         value="${value//\"/\\\"}"
         printf 'env[%s] = "%s"\n' "$key" "$value"
     done < <(env)
 }
 
-# WP Salts — generate wp-secrets.php if no env vars and no existing file
+# WP Salts
 _wp_secrets_file="${APP_PATH}/wp-secrets.php"
 _needs_salts=false
 for _salt_key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
@@ -332,6 +441,7 @@ if [[ "$_needs_salts" == "true" ]] && [[ ! -f "$_wp_secrets_file" ]]; then
             printf "define('%s', '%s');\n" "$_salt_key" "$(openssl rand -base64 48)"
         done
     } > "$_wp_secrets_file"
+    chown "${APP_USER}:${APP_GROUP}" "$_wp_secrets_file"
     chmod 640 "$_wp_secrets_file"
     info "WordPress security keys written."
 fi
@@ -353,15 +463,13 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
     fi
 
     {
-        printf '\n; ─── env allow-list (generated by presshost-init) ───\n'
+        printf '\n; ─── env forwarding (generated by presshost-init) ───\n'
         printf '%s\n' "$POOL_ENV_BLOCK"
     } >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
     rm -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
 fi
 
-# Send the FPM master error log to ${LOGS_PATH} so it lives next to the rest of
-# the application logs, and let our emergency-restart [global] block control
-# log_level instead of the stock value.
+# Send the FPM master error log to ${LOGS_PATH}
 if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf ]]; then
     sed -i -E "s|^error_log\s*=.*|error_log = ${LOGS_PATH}/php-fpm.log|" \
         /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
@@ -380,11 +488,18 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl ]]; then
 fi
 
 if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
-    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APC_ENABLED} ${PHP_APC_SHM_SIZE} ${PHP_APC_TTL} ${PHP_APC_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS}' \
+    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_COOKIE_SAMESITE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APCU_ENABLED} ${PHP_APCU_SHM_SIZE} ${PHP_APCU_TTL} ${PHP_APCU_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS} ${PHP_ERROR_REPORTING}' \
     < /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
     > /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
 
-    cp /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
+    # CLI variant: own disable_functions (default: none, so WP-CLI works fully)
+    # and an explicit opcache.enable_cli toggle.
+    sed -e "s|^disable_functions = .*|disable_functions = ${PHP_CLI_DISABLE_FUNCTIONS}|" \
+        /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini \
+        > /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
+    printf 'opcache.enable_cli = %s\n' "${PHP_OPCACHE_ENABLE_CLI}" \
+        >> /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
+
     rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
 

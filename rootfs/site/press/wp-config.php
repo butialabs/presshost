@@ -99,18 +99,26 @@ if (file_exists(ABSPATH . 'wp-secrets.php')) {
 }
 
 foreach (getenv() as $key => $value) {
-    if (strpos($key, 'PRESS_') === 0 && $value !== '') {
+    if ($value === '') {
+        continue;
+    }
+    if (strpos($key, 'PRESS_') === 0) {
         $constant_name = substr($key, 6);
-        if (!defined($constant_name)) {
-            $lower_value = strtolower($value);
-            if ($lower_value === 'true' || $lower_value === 'false' || $lower_value === '1' || $lower_value === '0') {
-                define($constant_name, getenv_docker($key, false, FILTER_VALIDATE_BOOLEAN));
-            } elseif (is_numeric($value) && strpos($value, '.') === false) {
-                define($constant_name, getenv_docker($key, 0, FILTER_VALIDATE_INT));
-            } else {
-                define($constant_name, getenv_docker($key, ''));
-            }
-        }
+    } elseif (strpos($key, 'WP_') === 0) {
+        $constant_name = $key;
+    } else {
+        continue;
+    }
+    if (defined($constant_name)) {
+        continue;
+    }
+    $lower_value = strtolower($value);
+    if ($lower_value === 'true' || $lower_value === 'false' || $lower_value === '1' || $lower_value === '0') {
+        define($constant_name, getenv_docker($key, false, FILTER_VALIDATE_BOOLEAN));
+    } elseif (is_numeric($value) && strpos($value, '.') === false) {
+        define($constant_name, getenv_docker($key, 0, FILTER_VALIDATE_INT));
+    } else {
+        define($constant_name, getenv_docker($key, ''));
     }
 }
 

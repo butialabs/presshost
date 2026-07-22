@@ -24,13 +24,13 @@ opcache.jit_buffer_size = ${PHP_OPCACHE_JIT_BUFFER_SIZE}
 
 session.cookie_httponly = ${PHP_SESSION_COOKIE_HTTPONLY}
 session.cookie_secure = ${PHP_SESSION_COOKIE_SECURE}
-session.cookie_samesite = Strict
+session.cookie_samesite = ${PHP_SESSION_COOKIE_SAMESITE}
 session.use_strict_mode = ${PHP_SESSION_USE_STRICT_MODE}
 
-apc.enabled = ${PHP_APC_ENABLED}
-apc.shm_size = ${PHP_APC_SHM_SIZE}
-apc.ttl = ${PHP_APC_TTL}
-apc.enable_cli = ${PHP_APC_ENABLE_CLI}
+apc.enabled = ${PHP_APCU_ENABLED}
+apc.shm_size = ${PHP_APCU_SHM_SIZE}
+apc.ttl = ${PHP_APCU_TTL}
+apc.enable_cli = ${PHP_APCU_ENABLE_CLI}
 
 realpath_cache_size = ${PHP_REALPATH_CACHE_SIZE}
 realpath_cache_ttl = ${PHP_REALPATH_CACHE_TTL}
@@ -38,6 +38,6 @@ realpath_cache_ttl = ${PHP_REALPATH_CACHE_TTL}
 display_errors = Off
 display_startup_errors = Off
 log_errors = On
-error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+error_reporting = ${PHP_ERROR_REPORTING}
 
 disable_functions = ${PHP_DISABLE_FUNCTIONS}

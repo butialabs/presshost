@@ -5,7 +5,6 @@ if (preg_match('/^[0-9]+(?:\.[0-9]+){1,2}/', $nginx_version, $m)) {
 }
 $load = sys_getloadavg();
 $load_avg = sprintf('%.2f, %.2f, %.2f', $load[0], $load[1], $load[2]);
-$process_count = count(glob('/proc/[0-9]*'));
 ?>
 <!DOCTYPE html>
 <html>
@@ -68,12 +67,9 @@ $process_count = count(glob('/proc/[0-9]*'));
         <ul>
             <li><strong>Hostname:</strong> <?= htmlspecialchars(gethostname(), ENT_QUOTES, 'UTF-8') ?></li>
             <li><strong>OS:</strong> <?= htmlspecialchars(PHP_OS, ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars(php_uname('m'), ENT_QUOTES, 'UTF-8') ?>)</li>
-            <li><strong>Kernel:</strong> <?= htmlspecialchars(php_uname('r'), ENT_QUOTES, 'UTF-8') ?></li>
             <li><strong>PHP:</strong> <?= htmlspecialchars(PHP_VERSION, ENT_QUOTES, 'UTF-8') ?></li>
             <li><strong>Nginx:</strong> <?= htmlspecialchars($nginx_version, ENT_QUOTES, 'UTF-8') ?></li>
-            <li><strong>Processes:</strong> <?= $process_count ?></li>
             <li><strong>Load Avg:</strong> <?= htmlspecialchars($load_avg, ENT_QUOTES, 'UTF-8') ?></li>
-            <li><strong>Server IP:</strong> <?= htmlspecialchars($_SERVER['SERVER_ADDR'], ENT_QUOTES, 'UTF-8') ?></li>
             <li><strong>Server Time:</strong> <?= htmlspecialchars(date('Y-m-d H:i:s T'), ENT_QUOTES, 'UTF-8') ?></li>
         </ul>
         <p>$<span class="blink">_</span></p>
