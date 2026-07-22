@@ -1,0 +1,6 @@
+#!/command/with-contenv bash
+if [[ "${VALKEY_ENABLED:-false}" != "true" ]]; then
+    s6-svc -d .
+    exit 0
+fi
+exec s6-setuidgid "${APP_USER:-www-data}" valkey-server /etc/valkey/valkey.conf

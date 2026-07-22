@@ -89,6 +89,20 @@ export NGINX_BROTLI_COMP_LEVEL="${NGINX_BROTLI_COMP_LEVEL:-4}"
 
 # PHP disable_functions 
 export PHP_DISABLE_FUNCTIONS="${PHP_DISABLE_FUNCTIONS:-exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec}"
+# Valkey auto-wiring
+if [[ "$VALKEY_ENABLED" == "true" ]]; then
+    : "${WP_REDIS_HOST:=127.0.0.1}"
+    : "${WP_REDIS_PORT:=$VALKEY_PORT}"
+    if [[ -n "$VALKEY_PASSWORD" ]]; then
+        : "${WP_REDIS_PASSWORD:=$VALKEY_PASSWORD}"
+        export WP_REDIS_PASSWORD
+    fi
+    export WP_REDIS_HOST WP_REDIS_PORT
+    info "Valkey enabled; WP_REDIS_HOST=${WP_REDIS_HOST} WP_REDIS_PORT=${WP_REDIS_PORT}"
+    if [[ "$VALKEY_BIND" != "127.0.0.1" && "$VALKEY_BIND" != "localhost" && -z "$VALKEY_PASSWORD" ]]; then
+        warning "VALKEY_BIND=${VALKEY_BIND} without VALKEY_PASSWORD — instance exposed to the network!"
+    fi
+fi
 
 # Auto Configurations
 get_mem_limit_mb() {
@@ -326,6 +340,27 @@ if [[ -f /etc/nginx/conf.d/cache-purge.conf.tpl ]]; then
     rm -f /etc/nginx/conf.d/cache-purge.conf.tpl
 fi
 
+
+# Redis/Valkey local server
+if [[ -f /etc/valkey/valkey.conf.tpl ]]; then
+    if [[ "$VALKEY_ENABLED" == "true" ]]; then
+        VALKEY_SAVE_LINE='save ""'
+        [[ -n "$VALKEY_SAVE" ]] && VALKEY_SAVE_LINE="save ${VALKEY_SAVE}"
+        VALKEY_REQUIREPASS_LINE="# requirepass not set"
+        [[ -n "$VALKEY_PASSWORD" ]] && VALKEY_REQUIREPASS_LINE="requirepass ${VALKEY_PASSWORD}"
+        export VALKEY_SAVE_LINE VALKEY_REQUIREPASS_LINE
+        mkdir -p /run/valkey
+        chown "${APP_USER}:${APP_GROUP}" /run/valkey
+        envsubst '${VALKEY_BIND} ${VALKEY_PORT} ${VALKEY_MAXMEMORY} ${VALKEY_MAXMEMORY_POLICY} ${VALKEY_SAVE_LINE} ${VALKEY_REQUIREPASS_LINE}' \
+        < /etc/valkey/valkey.conf.tpl \
+        > /etc/valkey/valkey.conf
+        chown "${APP_USER}:${APP_GROUP}" /etc/valkey/valkey.conf
+        chmod 755 /etc/valkey
+        chmod 600 /etc/valkey/valkey.conf
+        info "Valkey config generated (${VALKEY_BIND}:${VALKEY_PORT}, maxmemory ${VALKEY_MAXMEMORY})"
+    fi
+    rm -f /etc/valkey/valkey.conf.tpl
+fi
 if [[ -f /etc/logrotate.d/presshost.tpl ]]; then
     info "logrotate config..."
     envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE} ${APP_USER} ${APP_GROUP} ${PHP_VERSION}' \

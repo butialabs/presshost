@@ -12,6 +12,7 @@ LABEL maintainer="Butiá Labs <mecairam@butialabs.com>" \
 
 ARG PHP_VERSION=8.4
 ARG NGINX_VERSION=1.26.3-3+deb13u7
+ARG VALKEY_VERSION=8.1.1+dfsg1-3+deb13u2
 ARG COMPOSER_VERSION=2.10.1
 ARG WPCLI_VERSION=2.12.0
 ARG S6_OVERLAY_VERSION=3.2.3.0
@@ -23,6 +24,7 @@ ENV TZ=UTC \
     LOG_LEVEL=WARN \
     PHP_VERSION=${PHP_VERSION} \
     NGINX_VERSION=${NGINX_VERSION} \
+    VALKEY_VERSION=${VALKEY_VERSION} \
     APP_PATH=/site/press \
     APP_USER=www-data \
     APP_GROUP=www-data \
@@ -102,6 +104,13 @@ ENV TZ=UTC \
     SSL_CERT_PATH="/site/ssl/server.crt" \
     SSL_PRIVATE_PATH="/site/ssl/server.key" \
     SSL_TRUSTED_CERT_PATH="/site/ssl/server.crt" \
+    VALKEY_ENABLED=false \
+    VALKEY_BIND=127.0.0.1 \
+    VALKEY_PORT=6379 \
+    VALKEY_MAXMEMORY=128mb \
+    VALKEY_MAXMEMORY_POLICY=allkeys-lru \
+    VALKEY_SAVE="" \
+    VALKEY_PASSWORD="" \
     LOG_MAX_SIZE=10M \
     LOG_MAX_AGE=7 \
     WP_CLI_DIR=/.wp-cli \
@@ -158,7 +167,9 @@ RUN set -eux; \
         nginx=${NGINX_VERSION} \
         libnginx-mod-http-brotli-filter \
         libnginx-mod-http-brotli-static \
-        libnginx-mod-http-cache-purge; \
+        libnginx-mod-http-cache-purge \
+        valkey-server=${VALKEY_VERSION} \
+        valkey-tools=${VALKEY_VERSION}; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -o /tmp/s6-overlay-noarch.tar.xz; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" -o /tmp/s6-overlay-arch.tar.xz; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-noarch.tar.xz" -o /tmp/s6-overlay-symlinks-noarch.tar.xz; \
@@ -184,12 +195,14 @@ RUN set -eux; \
     mkdir -p \
         /site/press /site/uploads /site/cache /site/logs /site/ssl \
         ${WP_CLI_DIR} ${WP_CLI_CACHE_DIR} ${WP_CLI_PACKAGES_DIR} \
-        /run/nginx /run/php \
+        /run/nginx /run/php /run/valkey \
+        /home/www-data \
         /etc/presshost; \
     chown -R www-data:www-data \
         /site \
         ${WP_CLI_DIR} \
-        /run/nginx /run/php
+        /run/nginx /run/php /run/valkey \
+        /home/www-data
 
 COPY --chmod=755 rootfs/usr/local/bin/ /usr/local/bin/
 
@@ -205,6 +218,8 @@ COPY rootfs/etc/nginx/ /etc/nginx/
 
 # Copy supercronic crontab
 COPY rootfs/etc/presshost/ /etc/presshost/
+
+COPY rootfs/etc/valkey/ /etc/valkey/
 
 # Copy PHP files
 COPY rootfs/etc/php/fpm/pool.d/www.conf.tpl /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl

@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+# No-op when the local Valkey service is disabled
+if [[ "${VALKEY_ENABLED:-false}" != "true" ]]; then
+    exit 0
+fi
+
+if ! pgrep -x "valkey-server" > /dev/null; then
+    echo "[ERROR] $(date -Iseconds) - valkey-server is not running"
+    exit 1
+fi
+
+auth_args=()
+if [[ -n "${VALKEY_PASSWORD:-}" ]]; then
+    auth_args=(-a "${VALKEY_PASSWORD}" --no-auth-warning)
+fi
+
+out=$(valkey-cli -h 127.0.0.1 -p "${VALKEY_PORT:-6379}" "${auth_args[@]}" ping 2>&1 || true)
+if [[ "$out" != *PONG* ]]; then
+    echo "[ERROR] $(date -Iseconds) - valkey is not responding (ping output: $out)"
+    exit 1
+fi
+
+echo "[INFO] $(date -Iseconds) - valkey is healthy"
