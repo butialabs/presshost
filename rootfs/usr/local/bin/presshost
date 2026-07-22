@@ -418,7 +418,11 @@ install_press() {
     trap 'cleanup_temp_dir "$temp_dir" >/dev/null 2>&1 || true' RETURN
 
     update_whiptail_progress 10 "Downloading ${version_info}..."
-    if ! download_press_archive "$download_url" "$archive_file" "$press_name"; then
+    local checksum_url=""
+    if [[ "$type" == "wordpress" ]]; then
+        checksum_url="${download_url}.sha1"
+    fi
+    if ! download_press_archive "$download_url" "$archive_file" "$press_name" "$checksum_url"; then
         error "Failed to download ${press_name}"
         return 1
     fi

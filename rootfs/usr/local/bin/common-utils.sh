@@ -525,6 +525,7 @@ download_press_archive() {
     local download_url="$1"
     local archive_file="$2"
     local press_name="${3:-Press}"
+    local checksum_url="${4:-}"
 
     info "Downloading ${press_name} from: $download_url"
     if ! curl -fsSL --retry 3 --retry-delay 3 "$download_url" -o "$archive_file"; then
@@ -532,6 +533,37 @@ download_press_archive() {
         return 1
     fi
     success "${press_name} downloaded ($(du -h "$archive_file" | cut -f1))"
+
+    if [[ -n "$checksum_url" ]]; then
+        verify_press_archive_checksum "$archive_file" "$checksum_url" "$press_name" || return 1
+    else
+        warning "No checksum URL available for ${press_name}; archive integrity NOT verified"
+    fi
+}
+
+verify_press_archive_checksum() {
+    local archive_file="$1"
+    local checksum_url="$2"
+    local press_name="${3:-Press}"
+    local expected_file=""
+
+    expected_file=$(mktemp) || return 1
+    if ! curl -fsSL --retry 3 --retry-delay 3 "$checksum_url" -o "$expected_file"; then
+        rm -f "$expected_file"
+        error "Failed to download checksum for ${press_name}; aborting for safety"
+        return 1
+    fi
+
+    local expected actual
+    expected=$(awk '{print $1}' "$expected_file" | tr -d '[:space:]')
+    rm -f "$expected_file"
+    actual=$(sha1sum "$archive_file" | awk '{print $1}')
+
+    if [[ -z "$expected" || "$expected" != "$actual" ]]; then
+        error "Checksum mismatch for ${press_name} (expected: ${expected:-none}, got: $actual)"
+        return 1
+    fi
+    success "${press_name} checksum verified (sha1)"
 }
 
 extract_press_archive() {
@@ -749,7 +781,7 @@ run_press_install() {
     fi
 }
 
-export -f generate_password download_press_archive extract_press_archive install_press_files
+export -f generate_password download_press_archive verify_press_archive_checksum extract_press_archive install_press_files
 export -f set_press_permissions setup_press_content cleanup_temp_dir verify_press_installation
 export -f check_press_installed create_press_config generate_press_secrets run_press_install
 
