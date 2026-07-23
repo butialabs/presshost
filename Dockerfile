@@ -214,8 +214,8 @@ RUN set -eux; \
     chmod +x /usr/local/bin/supercronic; \
     curl -fsSL -o /usr/local/bin/composer https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar; \
     chmod +x /usr/local/bin/composer; \
-    curl -fsSL -o /usr/local/bin/wp https://github.com/wp-cli/wp-cli/releases/download/v${WPCLI_VERSION}/wp-cli-${WPCLI_VERSION}.phar; \
-    chmod +x /usr/local/bin/wp; \
+    curl -fsSL -o /usr/local/bin/wp-cli.phar https://github.com/wp-cli/wp-cli/releases/download/v${WPCLI_VERSION}/wp-cli-${WPCLI_VERSION}.phar; \
+    chmod +x /usr/local/bin/wp-cli.phar; \
     apt-get purge -y --auto-remove lsb-release gnupg xz-utils; \
     rm -rf /etc/nginx/sites-enabled/* /etc/nginx/sites-available/*; \
     ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm; \

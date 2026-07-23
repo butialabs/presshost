@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+if [[ "${EUID}" -eq 0 ]]; then
+    exec runuser -u "${APP_USER:-www-data}" -- /usr/local/bin/wp-cli.phar "$@"
+fi
+
+exec /usr/local/bin/wp-cli.phar "$@"
