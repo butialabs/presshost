@@ -28,6 +28,7 @@ set_default() {
 set_default LOG_LEVEL WARN
 set_default SITEURL ""
 set_default FIX_OWNERSHIP true
+set_default FIX_UPLOADS_OWNERSHIP false
 set_default TZ UTC
 set_default PHP_VERSION 8.4
 set_default APP_PATH /site/press
@@ -721,7 +722,17 @@ fi
 
 # Ownership remediation
 if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then
-    safe-chown "${APP_PATH}" "${UPLOADS_PATH}" "${CACHE_PATH}" "${LOGS_PATH}" || true
+    _chown_paths=("${APP_PATH}" "${CACHE_PATH}" "${LOGS_PATH}")
+    if [[ "${FIX_UPLOADS_OWNERSHIP:-false}" == "true" ]]; then
+        _chown_paths+=("${UPLOADS_PATH}")
+    else
+        info "Skipping ownership fix on ${UPLOADS_PATH}"
+    fi
+    mkdir -p "${LOGS_PATH}"
+    info "Fixing ownership in the background (log: ${LOGS_PATH}/safe-chown.log)"
+    nohup safe-chown "${_chown_paths[@]}" >> "${LOGS_PATH}/safe-chown.log" 2>&1 &
+    disown
+    unset _chown_paths
 fi
 
 info "PressHost initialization complete!"

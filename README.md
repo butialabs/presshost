@@ -155,7 +155,8 @@ If you are upgrading from a previous version, review these changes:
 | `NGINX_HTTP_PORT` | `80`           | HTTP port the container listens on                                    |
 | `NGINX_HTTPS_PORT`| `443`          | HTTPS port the container listens on                                   |
 | `TZ`             | `UTC`           | Timezone                                                              |
-| `FIX_OWNERSHIP`  | `true`          | At startup, `chown -R` app dirs to `APP_USER` when their owner is wrong |
+| `FIX_OWNERSHIP`  | `true`          | At startup, `chown -R` app dirs to `APP_USER` when their owner is wrong, in the background |
+| `FIX_UPLOADS_OWNERSHIP` | `false`  | Also include `UPLOADS_PATH` in the startup ownership fix (skipped by default, it's usually the largest tree) |
 
 ### Building a derived image
 
@@ -166,7 +167,7 @@ FROM ghcr.io/butialabs/presshost:latest
 COPY --chown=www-data:www-data ./wordpress/ /site/press/
 ```
 
-If you forget `--chown`, the init fixes ownership automatically at container start (see `FIX_OWNERSHIP`), startup just takes longer on large trees.
+If you forget `--chown`, the init fixes ownership automatically at container start (see `FIX_OWNERSHIP`).
 
 ### PHP
 
@@ -559,7 +560,9 @@ docker exec -u 0 presshost presshost fix-perms
 
 #### safe-chown
 
-`safe-chown <path> [path...]` fixes ownership to `APP_USER:APP_GROUP` efficiently: healthy trees are an instant no-op (top-level probe), and dirty trees are walked chowning **only** wrong-owned entries in batches (no per-file forks, no wasted syscalls). It runs automatically at startup when `FIX_OWNERSHIP=true` and is used by `presshost fix-perms`. Manual use:
+`safe-chown <path> [path...]` fixes ownership to `APP_USER:APP_GROUP` efficiently: healthy trees are an instant no-op (top-level probe), and dirty trees are walked chowning **only** wrong-owned entries in batches. 
+
+It runs automatically at startup when `FIX_OWNERSHIP=true`, in the background (`APP_PATH`, `CACHE_PATH`, `LOGS_PATH` by default; add `UPLOADS_PATH` with `FIX_UPLOADS_OWNERSHIP=true`), and is also used by `presshost fix-perms` (which always covers all four paths, run synchronously on demand). Manual use:
 
 ```bash
 docker exec presshost safe-chown /site/press /site/uploads
