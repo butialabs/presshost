@@ -78,6 +78,7 @@ jobs:
             -e NGINX_BROTLI_COMP_LEVEL=4 \
             -e LOG_LEVEL=DEBUG \
             -e PRESS_GOOGLE_KEY=abc123 \
+            -e NGINX_BLOCK_SPAM=true \
             "$IMAGE_NAME"
           sleep 12
           STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "missing")
