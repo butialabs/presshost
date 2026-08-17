@@ -142,8 +142,7 @@ input_admin_pass() {
 
         show_whiptail_warning "A admin password was generated:\n\n${generated_pass}\n\nCopy it now. Press OK to continue." "Generated Password"
 
-        echo "$generated_pass"
-        GENERATED_PASSWORD="$generated_pass"
+        echo "generated:$generated_pass"
         return 0
     fi
     
@@ -175,8 +174,7 @@ input_admin_pass() {
             continue
         fi
         
-        GENERATED_PASSWORD=""
-        echo "$password"
+        echo "typed:$password"
         return 0
     done
 }
@@ -512,7 +510,12 @@ get_installation_params() {
     INSTALL_EMAIL=$(input_admin_email "${INSTALL_EMAIL:-}") || return 1
     
     # Step 6: Admin Password
-    INSTALL_PASS=$(input_admin_pass) || return 1
+    local pass_result
+    pass_result=$(input_admin_pass) || return 1
+    INSTALL_PASS="${pass_result#*:}"
+    if [[ "$pass_result" == generated:* ]]; then
+        GENERATED_PASSWORD="$INSTALL_PASS"
+    fi
     
     # Step 7: Locale
     INSTALL_LOCALE=$(input_locale "${INSTALL_LOCALE:-en_US}") || return 1

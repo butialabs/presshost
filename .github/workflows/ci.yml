@@ -79,6 +79,7 @@ jobs:
             -e LOG_LEVEL=DEBUG \
             -e PRESS_GOOGLE_KEY=abc123 \
             -e NGINX_BLOCK_SPAM=true \
+            -e INSTALL_PASS='install-pass-must-not-leak' \
             "$IMAGE_NAME"
           sleep 12
           STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "missing")
@@ -502,6 +503,8 @@ jobs:
           assert_not_contains "$POOL" 'env[NGINX_CACHE]'        "NGINX_* not forwarded to PHP"
           assert_not_contains "$POOL" 'env[PATH]'               "PATH not forwarded"
           assert_not_contains "$POOL" 'env[VALKEY_PASSWORD]'    "VALKEY_* not forwarded to PHP"
+          assert_not_contains "$POOL" 'env[INSTALL_PASS]'       "INSTALL_PASS not forwarded to PHP"
+          assert_not_contains "$POOL" 'install-pass-must-not-leak' "admin password value absent from pool config"
 
           FPM_GLOBAL=$(dexec "$CONTAINER_NAME" sh -c "cat /etc/php/*/fpm/php-fpm.conf")
           assert_contains "$FPM_GLOBAL" "emergency_restart_threshold" "emergency_restart_threshold present"
@@ -544,6 +547,22 @@ jobs:
           # ──────────────────────────────────────────────────────────────────────
           HC_ALL=$(dexec "$CONTAINER_NAME" /etc/s6-overlay/scripts/healthcheck-all)
           assert_match "$HC_ALL" '^[[:space:]]*$|healthy' "composite healthcheck returns success"
+
+          dexec "$CONTAINER_NAME" s6-svc -d /run/service/php-fpm >/dev/null 2>&1 || true
+          sleep 3
+          if dexec "$CONTAINER_NAME" /etc/s6-overlay/scripts/healthcheck-php-fpm >/dev/null 2>&1; then
+            fail "php-fpm healthcheck reported healthy while php-fpm was stopped"
+          else
+            pass "php-fpm healthcheck detects a stopped php-fpm"
+          fi
+
+          dexec "$CONTAINER_NAME" s6-svc -u /run/service/php-fpm >/dev/null 2>&1 || true
+          for _ in $(seq 1 20); do
+            dexec "$CONTAINER_NAME" /etc/s6-overlay/scripts/healthcheck-php-fpm >/dev/null 2>&1 && break
+            sleep 1
+          done
+          HC_BACK=$(dexec "$CONTAINER_NAME" /etc/s6-overlay/scripts/healthcheck-php-fpm 2>&1 || true)
+          assert_contains "$HC_BACK" "healthy" "php-fpm recovers after being restarted"
           end_step
 
           # ──────────────────────────────────────────────────────────────────────

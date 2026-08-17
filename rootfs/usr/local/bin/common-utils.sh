@@ -518,7 +518,13 @@ export -f generate_local_salts
 
 generate_password() {
     local length="${1:-16}"
-    tr -dc 'A-Za-z0-9!@#$%^&*()_+-=' < /dev/urandom | head -c "$length"
+    local out
+    out=$(head -c 4096 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()_=+-' | cut -c1-"$length")
+    if [[ ${#out} -ne $length ]]; then
+        error "generate_password: got ${#out} chars, expected ${length}"
+        return 1
+    fi
+    printf '%s' "$out"
 }
 
 download_press_archive() {
@@ -768,11 +774,22 @@ run_press_install() {
     if "$PRESS_WP_CLI" "${install_args[@]}"; then
         success "${press_name} installed successfully!"
         if [[ -n "$generated_pass" ]]; then
-            echo ""
-            echo "  Admin Username: $admin_user"
-            echo "  Admin Password: $generated_pass"
-            echo "  Save this password now!"
-            echo ""
+            local pass_file="${LOGS_PATH:-/site/logs}/initial-admin-password"
+            local umask_old
+            umask_old=$(umask)
+            umask 077
+            if printf '%s\n' "$generated_pass" > "$pass_file" 2>/dev/null; then
+                umask "$umask_old"
+                chmod 600 "$pass_file" 2>/dev/null || true
+                echo ""
+                echo "  Admin Username: $admin_user"
+                echo "  Admin Password written to: $pass_file"
+                echo "  Read it, then delete that file."
+                echo ""
+            else
+                umask "$umask_old"
+                warning "Could not write ${pass_file}; reset the admin password with 'wp user update'"
+            fi
         fi
         return 0
     else
