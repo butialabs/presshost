@@ -49,4 +49,11 @@ node_modules/
 # Backup files
 *.bak
 *.backup
-*~
+
+# Keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+ssl/
