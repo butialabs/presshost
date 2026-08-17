@@ -16,13 +16,13 @@ status=0
 for path in "$@"; do
     [[ -e "$path" ]] || continue
 
-    if [[ -z "$(find "$path" -maxdepth 1 \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) -print -quit 2>/dev/null)" ]]; then
+    if [[ -z "$(find "$path" \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) -print -quit 2>/dev/null)" ]]; then
         continue
     fi
 
     echo "safe-chown: fixing ownership of ${path} (-> ${APP_USER}:${APP_GROUP})" >&2
     if ! find "$path" \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) \
-            -exec chown "${APP_USER}:${APP_GROUP}" {} +; then
+            -exec chown -h "${APP_USER}:${APP_GROUP}" {} +; then
         echo "safe-chown: chown failed on ${path}" >&2
         status=1
     fi
