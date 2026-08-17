@@ -39,7 +39,6 @@ set_default CACHE_PATH /site/cache
 set_default LOGS_PATH /site/logs
 set_default LOG_MAX_SIZE 10M
 set_default LOG_MAX_AGE 7
-set_default FIX_OWNERSHIP true
 
 # SSL
 set_default SSL_CERT_PATH /site/ssl/server.crt
