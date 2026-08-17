@@ -1,5 +1,5 @@
 <?php
-$nginx_version = getenv('NGINX_VERSION');
+$nginx_version = getenv('NGINX_VERSION') ?: '';
 if (preg_match('/^[0-9]+(?:\.[0-9]+){1,2}/', $nginx_version, $m)) {
     $nginx_version = $m[0];
 }
