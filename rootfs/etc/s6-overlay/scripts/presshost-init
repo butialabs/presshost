@@ -409,6 +409,7 @@ build_pool_env_block() {
     while IFS='=' read -r key value; do
         [[ -z "$key" ]] && continue
         case "$key" in
+            INSTALL_PASS) continue ;;
             DB_*|WP_*|SMTP_*|PRESS_*|INSTALL_*) ;;
             *) continue ;;
         esac
