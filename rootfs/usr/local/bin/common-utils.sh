@@ -534,7 +534,7 @@ download_press_archive() {
     local checksum_url="${4:-}"
 
     info "Downloading ${press_name} from: $download_url"
-    if ! curl -fsSL --retry 3 --retry-delay 3 "$download_url" -o "$archive_file"; then
+    if ! curl -fsSL --retry 3 --retry-delay 3 --connect-timeout 10 --max-time 300 "$download_url" -o "$archive_file"; then
         error "Failed to download ${press_name}"
         return 1
     fi
@@ -554,7 +554,7 @@ verify_press_archive_checksum() {
     local expected_file=""
 
     expected_file=$(mktemp) || return 1
-    if ! curl -fsSL --retry 3 --retry-delay 3 "$checksum_url" -o "$expected_file"; then
+    if ! curl -fsSL --retry 3 --retry-delay 3 --connect-timeout 10 --max-time 300 "$checksum_url" -o "$expected_file"; then
         rm -f "$expected_file"
         error "Failed to download checksum for ${press_name}; aborting for safety"
         return 1
