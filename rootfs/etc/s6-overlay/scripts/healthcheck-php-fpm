@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-FPM_SOCK="/run/php/php${PHP_VERSION}-fpm.sock"
+FPM_SOCK="/run/php/php${PHP_VERSION:-8.4}-fpm.sock"
 
-if ! pgrep -f "php-fpm" > /dev/null; then
+if ! pgrep -f "php-fpm: master" > /dev/null; then
     echo "[ERROR] $(date -Iseconds) - PHP-FPM is not running"
     exit 1
 fi

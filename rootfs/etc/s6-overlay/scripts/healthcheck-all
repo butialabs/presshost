@@ -5,19 +5,18 @@ set -uo pipefail
 # Validates that NGINX answers AND PHP-FPM ping responds.
 # Valkey is only checked when VALKEY_ENABLED=true.
 
-if ! /etc/s6-overlay/scripts/healthcheck-nginx >/dev/null 2>&1; then
-    echo "[ERROR] nginx unhealthy" >&2
-    exit 1
-fi
+check() {
+    local name="$1" out
+    if ! out=$("/etc/s6-overlay/scripts/healthcheck-${name}" 2>&1); then
+        echo "[ERROR] ${name} unhealthy" >&2
+        [[ -n "$out" ]] && echo "$out" >&2
+        return 1
+    fi
+    return 0
+}
 
-if ! /etc/s6-overlay/scripts/healthcheck-php-fpm >/dev/null 2>&1; then
-    echo "[ERROR] php-fpm unhealthy" >&2
-    exit 1
-fi
-
-if ! /etc/s6-overlay/scripts/healthcheck-valkey >/dev/null 2>&1; then
-    echo "[ERROR] valkey unhealthy" >&2
-    exit 1
-fi
+check nginx   || exit 1
+check php-fpm || exit 1
+check valkey  || exit 1
 
 exit 0

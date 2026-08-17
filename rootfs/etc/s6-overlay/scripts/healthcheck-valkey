@@ -11,12 +11,11 @@ if ! pgrep -x "valkey-server" > /dev/null; then
     exit 1
 fi
 
-auth_args=()
 if [[ -n "${VALKEY_PASSWORD:-}" ]]; then
-    auth_args=(-a "${VALKEY_PASSWORD}" --no-auth-warning)
+    export REDISCLI_AUTH="${VALKEY_PASSWORD}"
 fi
 
-out=$(valkey-cli -h 127.0.0.1 -p "${VALKEY_PORT:-6379}" "${auth_args[@]}" ping 2>&1 || true)
+out=$(valkey-cli -h 127.0.0.1 -p "${VALKEY_PORT:-6379}" --no-auth-warning ping 2>&1 || true)
 if [[ "$out" != *PONG* ]]; then
     echo "[ERROR] $(date -Iseconds) - valkey is not responding (ping output: $out)"
     exit 1
