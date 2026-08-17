@@ -180,6 +180,10 @@ if [[ -n "$NGINX_ORIGIN_AUTH_SECRET" && ! "$NGINX_ORIGIN_AUTH_SECRET" =~ ^[A-Za-
     error "NGINX_ORIGIN_AUTH_SECRET contains invalid characters (allowed: A-Za-z0-9._~-)"
     exit 1
 fi
+if [[ -n "${VALKEY_PASSWORD:-}" && "$VALKEY_PASSWORD" == *[[:cntrl:]]* ]]; then
+    error "VALKEY_PASSWORD must not contain control characters (newline, tab, CR)"
+    exit 1
+fi
 
 case "${LOG_LEVEL^^}" in
     ERROR) NGINX_LOG_LEVEL=error;  PHP_FPM_LOG_LEVEL=error ;;
@@ -645,7 +649,11 @@ if [[ -f /etc/valkey/valkey.conf.tpl ]]; then
         VALKEY_SAVE_LINE='save ""'
         [[ -n "$VALKEY_SAVE" ]] && VALKEY_SAVE_LINE="save ${VALKEY_SAVE}"
         VALKEY_REQUIREPASS_LINE="# requirepass not set"
-        [[ -n "$VALKEY_PASSWORD" ]] && VALKEY_REQUIREPASS_LINE="requirepass ${VALKEY_PASSWORD}"
+        if [[ -n "$VALKEY_PASSWORD" ]]; then
+            _vk_pass="${VALKEY_PASSWORD//\\/\\\\}"
+            _vk_pass="${_vk_pass//\"/\\\"}"
+            VALKEY_REQUIREPASS_LINE="requirepass \"${_vk_pass}\""
+        fi
         export VALKEY_SAVE_LINE VALKEY_REQUIREPASS_LINE
         mkdir -p /run/valkey
         chown "${APP_USER}:${APP_GROUP}" /run/valkey
