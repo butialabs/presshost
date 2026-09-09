@@ -98,6 +98,13 @@ if (file_exists(ABSPATH . 'wp-secrets.php')) {
     define('NONCE_SALT', getenv_docker('NONCE_SALT', ''));
 }
 
+define('WP_REDIS_HOST', getenv_docker('WP_REDIS_HOST', '127.0.0.1'));
+define('WP_REDIS_PORT', getenv_docker('WP_REDIS_PORT', 6379, FILTER_VALIDATE_INT));
+define('WP_REDIS_PASSWORD', getenv_docker('WP_REDIS_PASSWORD', ''));
+define('WP_REDIS_TIMEOUT', getenv_docker('WP_REDIS_TIMEOUT', 1, FILTER_VALIDATE_INT));
+define('WP_REDIS_READ_TIMEOUT', getenv_docker('WP_REDIS_READ_TIMEOUT', 1, FILTER_VALIDATE_INT));
+define('WP_REDIS_GRACEFUL', getenv_docker('WP_REDIS_GRACEFUL', true, FILTER_VALIDATE_BOOLEAN));
+
 foreach (getenv() as $key => $value) {
     if ($value === '') {
         continue;
