@@ -158,6 +158,20 @@ If you are upgrading from a previous version, review these changes:
 | `FIX_OWNERSHIP`  | `true`          | At startup, `chown -R` app dirs to `APP_USER` when their owner is wrong, in the background |
 | `FIX_UPLOADS_OWNERSHIP` | `false`  | Also include `UPLOADS_PATH` in the startup ownership fix (skipped by default, it's usually the largest tree) |
 
+### Cron
+
+WP/CP cron events are driven by supercronic (`DISABLE_WP_CRON` defaults to `true`), running `/usr/local/bin/press-cron.sh` every minute
+
+By default the events run through WP-CLI, on the PHP **CLI** binary. That is a different SAPI from the PHP-FPM workers serving the site: separate opcache, separate `disable_functions`, and a separate object-cache connection. When an `object-cache.php` drop-in is installed on **ClassicPress**, cache-flushing events executed on the CLI side never reach the cache the FPM workers are using, so the flush silently does nothing.
+
+To avoid that, `press-cron.sh` detects a ClassicPress install and dispatches the run with `curl` to `wp-cron.php` over the loopback interface instead.
+
+| Variable                          | Default | Description                                                                 |
+| --------------------------------- | ------- | --------------------------------------------------------------------------- |
+| `PRESS_CRON_MODE`                 | `auto`  | `auto` = HTTP only when an `object-cache.php` drop-in is present on ClassicPress; `http` = always dispatch over HTTP; `cli` = always use WP-CLI |
+| `PRESS_CRON_HTTP_TIMEOUT`         | `120`   | `curl --max-time` for the `wp-cron.php` request (seconds); keep it below `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` |
+| `PRESS_CRON_HTTP_CONNECT_TIMEOUT` | `5`     | `curl --connect-timeout` for the same request (seconds)                      |
+
 ### Building a derived image
 
 When baking WordPress/ClassicPress files into your own image, set the owner at build time for fastest startup:

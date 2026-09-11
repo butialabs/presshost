@@ -660,6 +660,99 @@ jobs:
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
+          step "Cron: HTTP dispatch with object-cache.php + ClassicPress"
+          # ──────────────────────────────────────────────────────────────────────
+          CU='source /usr/local/bin/common-utils.sh'
+
+          if dexec "$CONTAINER_NAME" bash -c "$CU && press_has_object_cache_dropin /site/press"; then
+            fail "object-cache.php drop-in reported on a clean install"
+          else
+            pass "no object-cache.php drop-in on a clean install"
+          fi
+
+          if dexec "$CONTAINER_NAME" bash -c "$CU && press_is_classicpress /site/press"; then
+            fail "WordPress install misdetected as ClassicPress"
+          else
+            pass "WordPress install not detected as ClassicPress"
+          fi
+
+          dexec "$CONTAINER_NAME" sh -c \
+            "touch /site/press/wp-content/object-cache.php && \
+             mkdir -p /site/press/wp-includes/classicpress && \
+             touch /site/press/wp-includes/classicpress/class-classicpress.php" >/dev/null
+
+          if dexec "$CONTAINER_NAME" bash -c "$CU && press_has_object_cache_dropin /site/press"; then
+            pass "object-cache.php drop-in detected once present"
+          else
+            fail "object-cache.php drop-in not detected once present"
+          fi
+
+          if dexec "$CONTAINER_NAME" bash -c "$CU && press_is_classicpress /site/press"; then
+            pass "ClassicPress detected via class-classicpress.php"
+          else
+            fail "ClassicPress not detected via class-classicpress.php"
+          fi
+
+          dexec "$CONTAINER_NAME" sh -c "truncate -s 0 /site/logs/cron-presshost.log" >/dev/null
+
+          HTTP_CRON_OK=false
+          HTTP_CRON_LOG=""
+          HTTP_DEADLINE=$((SECONDS + 90))
+          while [ $SECONDS -lt $HTTP_DEADLINE ]; do
+            dexec "$CONTAINER_NAME" env PRESS_CRON_MODE=http /usr/local/bin/press-cron.sh >/dev/null || true
+            HTTP_CRON_LOG=$(dexec "$CONTAINER_NAME" sh -c "cat /site/logs/cron-presshost.log 2>/dev/null || echo ''")
+            if echo "$HTTP_CRON_LOG" | grep -q 'Press cron events via HTTP completed successfully'; then
+              HTTP_CRON_OK=true
+              break
+            fi
+            sleep 5
+          done
+
+          $HTTP_CRON_OK && pass "cron events dispatched over HTTP (PHP-FPM)" \
+                        || { fail "cron did not complete over HTTP"; info "$HTTP_CRON_LOG"; }
+
+          assert_match "$HTTP_CRON_LOG" 'Cron dispatched over HTTP to https?://[^ ]+/wp-cron\.php\?doing_wp_cron \(HTTP 200\)' \
+            "wp-cron.php answered 200 through NGINX/FPM"
+          assert_not_contains "$HTTP_CRON_LOG" "falling back to WP-CLI" "no WP-CLI fallback was needed"
+
+          NGINX_CRON_HITS=0
+          NGINX_DEADLINE=$((SECONDS + 30))
+          while [ $SECONDS -lt $NGINX_DEADLINE ]; do
+            NGINX_CRON_HITS=$(dexec "$CONTAINER_NAME" sh -c \
+              "grep -cF 'GET /wp-cron.php?doing_wp_cron' /site/logs/nginx-access.log || true")
+            if [ "${NGINX_CRON_HITS:-0}" -gt 0 ]; then break; fi
+            sleep 5
+          done
+          if [ "${NGINX_CRON_HITS:-0}" -gt 0 ]; then
+            pass "wp-cron.php request went through NGINX (recorded in nginx-access.log)"
+          else
+            fail "no wp-cron.php request found in nginx-access.log"
+          fi
+
+          # auto mode must pick HTTP now that both conditions hold
+          dexec "$CONTAINER_NAME" sh -c "truncate -s 0 /site/logs/cron-presshost.log" >/dev/null
+          AUTO_CRON_LOG=""
+          AUTO_DEADLINE=$((SECONDS + 90))
+          AUTO_CRON_OK=false
+          while [ $SECONDS -lt $AUTO_DEADLINE ]; do
+            dexec "$CONTAINER_NAME" /usr/local/bin/press-cron.sh >/dev/null || true
+            AUTO_CRON_LOG=$(dexec "$CONTAINER_NAME" sh -c "cat /site/logs/cron-presshost.log 2>/dev/null || echo ''")
+            if echo "$AUTO_CRON_LOG" | grep -q 'Running Press cron events via HTTP (FPM)'; then
+              AUTO_CRON_OK=true
+              break
+            fi
+            sleep 5
+          done
+          $AUTO_CRON_OK && pass "auto mode selects HTTP when both conditions hold" \
+                        || { fail "auto mode did not select HTTP"; info "$AUTO_CRON_LOG"; }
+
+          dexec "$CONTAINER_NAME" sh -c \
+            "rm -f /site/press/wp-content/object-cache.php && \
+             rm -rf /site/press/wp-includes/classicpress && \
+             truncate -s 0 /site/logs/cron-presshost.log" >/dev/null
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
           step "No errors in logs during boot"
           # ──────────────────────────────────────────────────────────────────────
           BOOT_LOGS=$(docker logs "$CONTAINER_NAME" 2>&1)

@@ -338,6 +338,16 @@ validate_url() {
     [[ "$host" =~ $domain_regex ]]
 }
 
+derive_host_from_url() {
+    local url="$1"
+    url="${url#http://}"
+    url="${url#https://}"
+    url="${url%%/*}"
+    url="${url%%\?*}"
+    url="${url%%:*}"
+    echo "$url"
+}
+
 validate_username() {
     local username="$1"
     local regex="^[a-zA-Z0-9_]{3,20}$"
@@ -488,6 +498,7 @@ EOF
 export -f get_all_locales
 export -f get_terminal_size calc_dialog_size show_whiptail_error show_whiptail_warning show_whiptail_info show_whiptail_success show_whiptail_textbox update_whiptail_progress
 export -f validate_email validate_url validate_username validate_version validate_locale
+export -f derive_host_from_url
 
 PRESS_WP_DIR="${APP_PATH:-/site/press}"
 PRESS_UPLOADS_DIR="${UPLOADS_PATH:-/site/uploads}"
@@ -632,6 +643,26 @@ cleanup_temp_dir() {
 PRESS_TYPE=""
 PRESS_VERSION=""
 
+press_is_classicpress() {
+    local wp_dir="${1:-$PRESS_WP_DIR}"
+    local version_file="${wp_dir}/wp-includes/version.php"
+
+    if [[ -f "${wp_dir}/wp-includes/classicpress/class-classicpress.php" ]]; then
+        return 0
+    fi
+    if [[ ! -f "$version_file" ]]; then
+        return 1
+    fi
+    grep -qE '\$cp_version[[:space:]]*=|classicpress_version' "$version_file" 2>/dev/null
+}
+
+press_has_object_cache_dropin() {
+    local wp_dir="${1:-$PRESS_WP_DIR}"
+    [[ -f "${wp_dir}/wp-content/object-cache.php" ]]
+}
+
+export -f press_is_classicpress press_has_object_cache_dropin
+
 verify_press_installation() {
     PRESS_TYPE=""
     PRESS_VERSION=""
@@ -646,9 +677,7 @@ verify_press_installation() {
     local version_file="${PRESS_WP_DIR}/wp-includes/version.php"
     
     if [[ -f "$version_file" ]]; then
-        if grep -q '\$cp_version\s*=' "$version_file" 2>/dev/null || \
-           grep -q "classicpress_version" "$version_file" 2>/dev/null || \
-           [[ -f "${PRESS_WP_DIR}/wp-includes/classicpress/class-classicpress.php" ]]; then
+        if press_is_classicpress "$PRESS_WP_DIR"; then
             PRESS_TYPE="ClassicPress"
             PRESS_VERSION=$(grep -oP "\\\$cp_version\s*=\s*['\"]?\K[0-9]+\.[0-9]+(\.[0-9]+)?" "$version_file" 2>/dev/null || echo "")
             if [[ -z "$PRESS_VERSION" ]]; then
@@ -659,7 +688,7 @@ verify_press_installation() {
             PRESS_VERSION=$(grep -oP "\\\$wp_version\s*=\s*['\"]?\K[0-9]+\.[0-9]+(\.[0-9]+)?" "$version_file" 2>/dev/null || echo "")
         fi
     else
-        if [[ -f "${PRESS_WP_DIR}/wp-includes/classicpress/class-classicpress.php" ]]; then
+        if press_is_classicpress "$PRESS_WP_DIR"; then
             PRESS_TYPE="ClassicPress"
         else
             PRESS_TYPE="WordPress"

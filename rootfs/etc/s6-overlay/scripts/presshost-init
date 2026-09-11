@@ -196,16 +196,6 @@ export NGINX_LOG_LEVEL PHP_FPM_LOG_LEVEL
 # SITEURL
 SITEURL="${SITEURL:-}"
 
-derive_host_from_url() {
-    local url="$1"
-    url="${url#http://}"
-    url="${url#https://}"
-    url="${url%%/*}"
-    url="${url%%\?*}"
-    url="${url%%:*}"
-    echo "$url"
-}
-
 if [[ -n "$SITEURL" ]]; then
     SITEURL_HOST=$(derive_host_from_url "$SITEURL")
     if [[ "$SITEURL" != http://* && "$SITEURL" != https://* ]]; then
