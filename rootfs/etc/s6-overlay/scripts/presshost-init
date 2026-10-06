@@ -50,6 +50,7 @@ set_default NGINX_SSL_STAPLING_VERIFY off
 # NGINX core
 set_default NGINX_HTTP_PORT 80
 set_default NGINX_HTTPS_PORT 443
+set_default NGINX_HTTP_REDIRECT true
 set_default NGINX_WORKER_PROCESSES auto
 set_default NGINX_WORKER_CONNECTIONS 65535
 set_default NGINX_WORKER_RLIMIT_NOFILE 65535
@@ -212,7 +213,7 @@ fi
 
 export NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-_}"
 
-if [[ "${SITEURL_FULL:-}" == https://* ]]; then
+if [[ "${SITEURL_FULL:-}" == https://* && "$NGINX_HTTP_REDIRECT" == "true" ]]; then
     export NGINX_HTTP_LISTEN=""
     {
         printf 'server {\n'
@@ -226,8 +227,14 @@ if [[ "${SITEURL_FULL:-}" == https://* ]]; then
 else
     export NGINX_HTTP_LISTEN="listen ${NGINX_HTTP_PORT} default_server reuseport;
     listen [::]:${NGINX_HTTP_PORT} default_server reuseport;"
-    printf '# HTTP redirect disabled — SITEURL has http://\n' \
-        > /etc/nginx/sites-enabled/http-redirect.conf
+    if [[ "${SITEURL_FULL:-}" == https://* ]]; then
+        printf '# HTTP redirect disabled — NGINX_HTTP_REDIRECT=false\n' \
+            > /etc/nginx/sites-enabled/http-redirect.conf
+        info "HTTP > HTTPS redirect disabled (NGINX_HTTP_REDIRECT=false); serving HTTP on port ${NGINX_HTTP_PORT}"
+    else
+        printf '# HTTP redirect disabled — SITEURL has http://\n' \
+            > /etc/nginx/sites-enabled/http-redirect.conf
+    fi
 fi
 
 # HTTP/3 (QUIC)

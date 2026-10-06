@@ -339,6 +339,25 @@ jobs:
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
+          step "HTTP redirect disabled (TLS proxy)"
+          # ──────────────────────────────────────────────────────────────────────
+          docker rm -f "${CONTAINER_NAME}-noredir" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-noredir" \
+            --network "$NETWORK" \
+            -e SITEURL=https://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            -e NGINX_HTTP_REDIRECT=false \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          NOREDIR=$(dexec "${CONTAINER_NAME}-noredir" sh -c "curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' http://localhost/")
+          if [ "$NOREDIR" != "301" ] && [ "$NOREDIR" != "000" ]; then pass "HTTP served without redirect when NGINX_HTTP_REDIRECT=false ($NOREDIR)"; else fail "expected no HTTP > HTTPS redirect, got $NOREDIR"; fi
+
+          docker rm -f "${CONTAINER_NAME}-noredir" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
           step "Docker secrets (_FILE) resolution"
           # ──────────────────────────────────────────────────────────────────────
           echo -n "s3cret-from-file" > /tmp/db_password_test
