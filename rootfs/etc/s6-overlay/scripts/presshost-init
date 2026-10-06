@@ -51,6 +51,7 @@ set_default NGINX_SSL_STAPLING_VERIFY off
 set_default NGINX_HTTP_PORT 80
 set_default NGINX_HTTPS_PORT 443
 set_default NGINX_HTTP_REDIRECT true
+set_default NGINX_PATH_PREFIX ""
 set_default NGINX_WORKER_PROCESSES auto
 set_default NGINX_WORKER_CONNECTIONS 65535
 set_default NGINX_WORKER_RLIMIT_NOFILE 65535
@@ -212,6 +213,28 @@ if [[ -n "$SITEURL" ]]; then
 fi
 
 export NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-_}"
+
+if [[ -z "$NGINX_PATH_PREFIX" && -n "${WP_HOME:-}" ]]; then
+    NGINX_PATH_PREFIX=$(derive_path_from_url "$WP_HOME")
+fi
+NGINX_PATH_PREFIX="${NGINX_PATH_PREFIX%/}"
+[[ -n "$NGINX_PATH_PREFIX" ]] && NGINX_PATH_PREFIX="/${NGINX_PATH_PREFIX#/}"
+
+if [[ -z "$NGINX_PATH_PREFIX" ]]; then
+    printf '# No path prefix — site served at /\n' > /etc/nginx/conf.d/path-prefix.conf
+elif [[ "$NGINX_PATH_PREFIX" =~ ^(/[A-Za-z0-9._~-]+)+$ ]]; then
+    {
+        printf '# Site published under %s/ — strip the prefix to reach files at APP_PATH root.\n' "${NGINX_PATH_PREFIX}"
+        printf '# REQUEST_URI keeps the original path, so it still matches WP_HOME.\n'
+        printf 'rewrite ^%s/(.*)$ /$1 last;\n' "${NGINX_PATH_PREFIX}"
+    } > /etc/nginx/conf.d/path-prefix.conf
+    info "Path prefix enabled: ${NGINX_PATH_PREFIX}/"
+else
+    printf '# Invalid NGINX_PATH_PREFIX ignored\n' > /etc/nginx/conf.d/path-prefix.conf
+    warning "Invalid NGINX_PATH_PREFIX '${NGINX_PATH_PREFIX}' ignored"
+    NGINX_PATH_PREFIX=""
+fi
+export NGINX_PATH_PREFIX
 
 if [[ "${SITEURL_FULL:-}" == https://* && "$NGINX_HTTP_REDIRECT" == "true" ]]; then
     export NGINX_HTTP_LISTEN=""

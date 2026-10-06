@@ -29,6 +29,8 @@ server {
 
     index index.php;
 
+    include conf.d/path-prefix.conf;
+
     location = /wp-login.php {
         limit_req zone=login_limit burst=${NGINX_LOGIN_BURST} nodelay;
         fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;

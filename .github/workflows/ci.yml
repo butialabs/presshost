@@ -358,6 +358,28 @@ jobs:
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
+          step "Path prefix (site under subpath)"
+          # ──────────────────────────────────────────────────────────────────────
+          docker rm -f "${CONTAINER_NAME}-prefix" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-prefix" \
+            --network "$NETWORK" \
+            -e SITEURL=https://localhost/blog \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" \
+            -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+
+          PREFIX_CONF=$(dexec "${CONTAINER_NAME}-prefix" sh -c "cat /etc/nginx/conf.d/path-prefix.conf")
+          assert_contains "$PREFIX_CONF" 'rewrite ^/blog/(.*)$ /$1 last;' "path prefix derived from SITEURL"
+
+          dexec "${CONTAINER_NAME}-prefix" sh -c "echo ok > /site/press/prefix-test.txt" >/dev/null
+          PREFIX_STATIC=$(dexec "${CONTAINER_NAME}-prefix" sh -c "curl -sk -o /dev/null -w '%{http_code}' https://localhost/blog/prefix-test.txt")
+          if [ "$PREFIX_STATIC" = "200" ]; then pass "static file served under /blog/"; else fail "expected 200 under /blog/, got $PREFIX_STATIC"; fi
+
+          docker rm -f "${CONTAINER_NAME}-prefix" 2>/dev/null || true
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
           step "Docker secrets (_FILE) resolution"
           # ──────────────────────────────────────────────────────────────────────
           echo -n "s3cret-from-file" > /tmp/db_password_test

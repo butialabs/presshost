@@ -155,6 +155,7 @@ If you are upgrading from a previous version, review these changes:
 | `NGINX_HTTP_PORT` | `80`           | HTTP port the container listens on                                    |
 | `NGINX_HTTPS_PORT`| `443`          | HTTPS port the container listens on                                   |
 | `NGINX_HTTP_REDIRECT` | `true`     | Redirect HTTP > HTTPS when `SITEURL` is `https://`. Set `false` behind a TLS-terminating proxy to serve the site on `NGINX_HTTP_PORT` |
+| `NGINX_PATH_PREFIX` | derived from `WP_HOME` | Subpath the site is published under (e.g. `/blog` for `SITEURL=https://example.com/blog`). Requests under it are rewritten to the WordPress files at `APP_PATH` root |
 | `TZ`             | `UTC`           | Timezone                                                              |
 | `FIX_OWNERSHIP`  | `true`          | At startup, `chown -R` app dirs to `APP_USER` when their owner is wrong, in the background |
 | `FIX_UPLOADS_OWNERSHIP` | `false`  | Also include `UPLOADS_PATH` in the startup ownership fix (skipped by default, it's usually the largest tree) |

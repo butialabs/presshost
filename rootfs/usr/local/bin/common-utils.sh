@@ -348,6 +348,17 @@ derive_host_from_url() {
     echo "$url"
 }
 
+derive_path_from_url() {
+    local url="$1"
+    url="${url#http://}"
+    url="${url#https://}"
+    url="${url%%\?*}"
+    url="${url%%#*}"
+    [[ "$url" == */* ]] || return 0
+    url="/${url#*/}"
+    echo "${url%/}"
+}
+
 validate_username() {
     local username="$1"
     local regex="^[a-zA-Z0-9_]{3,20}$"
@@ -499,6 +510,7 @@ export -f get_all_locales
 export -f get_terminal_size calc_dialog_size show_whiptail_error show_whiptail_warning show_whiptail_info show_whiptail_success show_whiptail_textbox update_whiptail_progress
 export -f validate_email validate_url validate_username validate_version validate_locale
 export -f derive_host_from_url
+export -f derive_path_from_url
 
 PRESS_WP_DIR="${APP_PATH:-/site/press}"
 PRESS_UPLOADS_DIR="${UPLOADS_PATH:-/site/uploads}"
