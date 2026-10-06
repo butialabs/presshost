@@ -11,7 +11,7 @@ LABEL maintainer="Butiá Labs <mecairam@butialabs.com>" \
     org.opencontainers.image.licenses="MIT"
 
 ARG PHP_VERSION=8.4
-ARG NGINX_VERSION=1.26.3-3+deb13u7
+ARG NGINX_VERSION=1.26.3-3+deb13u9
 ARG VALKEY_VERSION=8.1.1+dfsg1-3+deb13u2
 ARG COMPOSER_VERSION=2.10.1
 ARG WPCLI_VERSION=2.12.0
