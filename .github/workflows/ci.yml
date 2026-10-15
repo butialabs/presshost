@@ -376,6 +376,14 @@ jobs:
           PREFIX_STATIC=$(dexec "${CONTAINER_NAME}-prefix" sh -c "curl -sk -o /dev/null -w '%{http_code}' https://localhost/blog/prefix-test.txt")
           if [ "$PREFIX_STATIC" = "200" ]; then pass "static file served under /blog/"; else fail "expected 200 under /blog/, got $PREFIX_STATIC"; fi
 
+          dexec "${CONTAINER_NAME}-prefix" sh -c "mkdir -p /site/press/prefix-dir" >/dev/null
+          PREFIX_DIR=$(dexec "${CONTAINER_NAME}-prefix" sh -c "curl -sk --http1.1 -D - -o /dev/null https://localhost/blog/prefix-dir")
+          assert_contains "$PREFIX_DIR" "301" "directory without trailing slash redirected"
+          assert_contains "$PREFIX_DIR" "Location: /blog/prefix-dir/" "directory redirect keeps the prefix"
+
+          PREFIX_ROOT=$(dexec "${CONTAINER_NAME}-prefix" sh -c "curl -sk --http1.1 -D - -o /dev/null https://localhost/blog")
+          assert_contains "$PREFIX_ROOT" "Location: /blog/" "bare prefix redirected to /blog/"
+
           docker rm -f "${CONTAINER_NAME}-prefix" 2>/dev/null || true
           end_step
 
