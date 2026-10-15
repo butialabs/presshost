@@ -226,6 +226,13 @@ elif [[ "$NGINX_PATH_PREFIX" =~ ^(/[A-Za-z0-9._~-]+)+$ ]]; then
     {
         printf '# Site published under %s/ — strip the prefix to reach files at APP_PATH root.\n' "${NGINX_PATH_PREFIX}"
         printf '# REQUEST_URI keeps the original path, so it still matches WP_HOME.\n'
+        printf '# Relative Location on nginx-generated redirects, so the client keeps the public host/scheme.\n'
+        printf 'absolute_redirect off;\n'
+        printf 'if ($uri = %s) { return 301 %s/$is_args$args; }\n' "${NGINX_PATH_PREFIX}" "${NGINX_PATH_PREFIX}"
+        printf '# Add the trailing slash to directories here, before the rewrite drops the prefix from $uri.\n'
+        printf 'set $pp_dir "";\n'
+        printf 'if ($uri ~ "^%s(?<pp_path>/.*[^/])$") { set $pp_dir $document_root$pp_path; }\n' "${NGINX_PATH_PREFIX}"
+        printf 'if (-d $pp_dir) { return 301 %s$pp_path/$is_args$args; }\n' "${NGINX_PATH_PREFIX}"
         printf 'rewrite ^%s/(.*)$ /$1 last;\n' "${NGINX_PATH_PREFIX}"
     } > /etc/nginx/conf.d/path-prefix.conf
     info "Path prefix enabled: ${NGINX_PATH_PREFIX}/"
