@@ -198,9 +198,12 @@ jobs:
             esac
           done
           [ -n "$NOTES" ] || NOTES="$LOG"
-          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          DELIM="EOF_$(openssl rand -hex 16)"
+          {
+            echo "NOTES<<${DELIM}"
+            echo "$NOTES"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 📝 Create release
         uses: softprops/action-gh-release@v2

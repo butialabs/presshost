@@ -56,6 +56,8 @@ docker compose up -d
 | `/site/uploads` | Media files (wp-content/uploads)         |
 | `/site/cache`   | Cache files (wp-content/cache) and NGINX |
 | `/site/logs`    | Log files                                |
+| `/site/ssl`     | TLS certificate and key                  |
+
 
 ## Installation
 
@@ -297,7 +299,7 @@ Existing files are never overwritten, so providing your own certificate (Let's E
 
 #### Cache Purging
 
-The cache can be purged using the NGINX Cache Purge module. We recommend using the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/)
+The cache can be purged using the NGINX Cache Purge module. We recommend using the [NGINX Helper](https://wordpress.org/plugins/nginx-helper/). `/purge/` only answers loopback and `NGINX_STATUS_ALLOW_FROM`; if your purge requests reach nginx through the Docker network, add that subnet.
 
 ### Custom NGINX Configuration
 
@@ -470,6 +472,7 @@ At boot, the init fetches the current IP ranges from `cloudflare.com/ips-v4` and
 | `NGINX_CLOUDFLARE_REAL_IP`  | `false`           | Auto-configure Cloudflare IP ranges  |
 | `NGINX_REAL_IP_HEADER`      | `X-Forwarded-For` | Header carrying the real IP (`CF-Connecting-IP` also works) |
 | `NGINX_REAL_IP_FROM`        | ``                | Extra space-separated CIDRs (other CDNs/proxies) |
+| `NGINX_REAL_IP_TRUST_PRIVATE` | `true`          | Also trust any RFC1918/ULA peer to send the real-IP header. Set `false` and list your proxy in `NGINX_REAL_IP_FROM` so clients behind a pass-through hop cannot spoof their IP |
 
 #### 3. Origin pull protection (`NGINX_ORIGIN_AUTH_SECRET`)
 
@@ -478,7 +481,12 @@ environment:
   NGINX_ORIGIN_AUTH_SECRET: "a-long-random-string"
 ```
 
-When set, requests from public networks must carry the header `X-Origin-Auth: <secret>` or they get `403`, preventing attackers from bypassing the CDN/WAF and hitting the origin directly. Configure the CDN to send the header (Cloudflare: Transform Rule -> Modify Request Header). Private networks (RFC1918, localhost) are always allowed so healthchecks keep working.
+When set, every request must carry the header `X-Origin-Auth: <secret>` (exact, case-sensitive match) or it gets `403`, preventing attackers from bypassing the CDN/WAF and hitting the origin directly. Configure the CDN to send the header (Cloudflare: Transform Rule -> Modify Request Header). Only loopback (`127.0.0.0/8`, `::1`) is exempt, so container healthchecks and the HTTP cron keep working. The check uses the real TCP peer, never a forwarded header, and private networks are **not** exempt: Docker port publishing or a local proxy can present public traffic with a private source address. Use at least 16 random characters.
+
+| Variable                       | Default | Description |
+| ------------------------------ | ------- | ----------- |
+| `NGINX_ORIGIN_AUTH_ALLOW_FROM` | ``      | Space-separated CIDRs exempt from the header (trusted internal callers) |
+| `NGINX_STATUS_ALLOW_FROM`      | ``      | Space-separated CIDRs allowed on `/nginx-status`, `/fpm-status`, `/fpm-ping` and `/purge` (loopback is always allowed) |
 
 ### Redis/Valkey Object Cache
 
@@ -504,7 +512,7 @@ With `VALKEY_ENABLED=true`, the init auto-wires `WP_REDIS_HOST=127.0.0.1` and `W
 | `VALKEY_SAVE`            | `` (empty)   | RDB save points, e.g. `"900 1 300 10"`. Empty = no persistence (cache-only) |
 | `VALKEY_PASSWORD`        | ``           | `requirepass` (also wired to `WP_REDIS_PASSWORD`) |
 
-> Never set `VALKEY_BIND` to a non-localhost address without `VALKEY_PASSWORD`!
+> Setting `VALKEY_BIND` to a non-localhost address without `VALKEY_PASSWORD` aborts the start.
 
 #### Option B: External Valkey (recommended for high traffic)
 
@@ -578,7 +586,7 @@ docker exec -u 0 presshost presshost fix-perms
 
 `safe-chown <path> [path...]` fixes ownership to `APP_USER:APP_GROUP` efficiently: healthy trees are an instant no-op (top-level probe), and dirty trees are walked chowning **only** wrong-owned entries in batches. 
 
-It runs automatically at startup when `FIX_OWNERSHIP=true`, in the background (`APP_PATH`, `CACHE_PATH`, `LOGS_PATH` by default; add `UPLOADS_PATH` with `FIX_UPLOADS_OWNERSHIP=true`), and is also used by `presshost fix-perms` (which always covers all four paths, run synchronously on demand). Manual use:
+It runs automatically at startup when `FIX_OWNERSHIP=true`, in the background (`APP_PATH`, `CACHE_PATH/press` and `CACHE_PATH/nginx` by default; add `UPLOADS_PATH` with `FIX_UPLOADS_OWNERSHIP=true`), and is also used by `presshost fix-perms` (run synchronously on demand). It chowns from inside each directory (`find -execdir`), never follows links and skips hard-linked files. Manual use:
 
 ```bash
 docker exec presshost safe-chown /site/press /site/uploads
