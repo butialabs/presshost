@@ -28,6 +28,7 @@ request_terminate_timeout = ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT}
 catch_workers_output = yes
 decorate_workers_output = no
 
+php_admin_value[open_basedir] = /site/:/usr/lib/php/:/tmp/
 php_admin_flag[log_errors] = on
 php_admin_value[error_log] = ${LOGS_PATH}/php-error.log
 slowlog = ${LOGS_PATH}/php-slow.log

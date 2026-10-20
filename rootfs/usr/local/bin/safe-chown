@@ -15,6 +15,11 @@ fi
 status=0
 for path in "$@"; do
     [[ -e "$path" ]] || continue
+    if [[ -L "$path" ]]; then
+        echo "safe-chown: refusing ${path}: it is a symlink" >&2
+        status=1
+        continue
+    fi
 
     if [[ -z "$(find "$path" \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) -print -quit 2>/dev/null)" ]]; then
         continue
@@ -22,7 +27,8 @@ for path in "$@"; do
 
     echo "safe-chown: fixing ownership of ${path} (-> ${APP_USER}:${APP_GROUP})" >&2
     if ! find "$path" \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) \
-            -exec chown -h "${APP_USER}:${APP_GROUP}" {} +; then
+            \( ! -type f -o -links 1 \) \
+            -execdir chown -h "${APP_USER}:${APP_GROUP}" {} +; then
         echo "safe-chown: chown failed on ${path}" >&2
         status=1
     fi

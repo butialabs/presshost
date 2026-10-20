@@ -1,20 +1,14 @@
 location /nginx-status {
+    if ($presshost_admin_ip = 0) {
+        return 403;
+    }
     stub_status on;
-    allow 127.0.0.1;
-    allow ::1;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    allow 192.168.0.0/16;
-    deny all;
 }
 
 location ~ ^/(fpm-status|fpm-ping)$ {
-    allow 127.0.0.1;
-    allow ::1;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    allow 192.168.0.0/16;
-    deny all;
+    if ($presshost_admin_ip = 0) {
+        return 403;
+    }
 
     include fastcgi_params;
     fastcgi_param SCRIPT_FILENAME "";

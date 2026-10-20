@@ -11,7 +11,11 @@ resolve_file_secrets() {
         [[ "$key" == *_FILE ]] || continue
         target="${key%_FILE}"
         [[ -n "${!target:-}" ]] && continue
-        [[ -n "$file" && -r "$file" ]] || continue
+        [[ -n "$file" ]] || continue
+        if [[ ! -f "$file" || ! -r "$file" ]]; then
+            error "${key} points to '${file}', which is missing or unreadable"
+            exit 1
+        fi
         value="$(<"$file")"
         value="${value%$'\r'}"
         export "${target}=${value}"
@@ -105,7 +109,10 @@ set_default NGINX_CDN_STALE_IF_ERROR 86400
 set_default NGINX_CLOUDFLARE_REAL_IP false
 set_default NGINX_REAL_IP_HEADER X-Forwarded-For
 set_default NGINX_REAL_IP_FROM ""
+set_default NGINX_REAL_IP_TRUST_PRIVATE true
 set_default NGINX_ORIGIN_AUTH_SECRET ""
+set_default NGINX_ORIGIN_AUTH_ALLOW_FROM ""
+set_default NGINX_STATUS_ALLOW_FROM ""
 
 # PHP
 set_default PHP_MAX_EXECUTION_TIME 120
@@ -180,6 +187,9 @@ fi
 if [[ -n "$NGINX_ORIGIN_AUTH_SECRET" && ! "$NGINX_ORIGIN_AUTH_SECRET" =~ ^[A-Za-z0-9._~-]+$ ]]; then
     error "NGINX_ORIGIN_AUTH_SECRET contains invalid characters (allowed: A-Za-z0-9._~-)"
     exit 1
+fi
+if [[ -n "$NGINX_ORIGIN_AUTH_SECRET" && ${#NGINX_ORIGIN_AUTH_SECRET} -lt 16 ]]; then
+    warning "NGINX_ORIGIN_AUTH_SECRET is shorter than 16 characters; use a long random value"
 fi
 if [[ -n "${VALKEY_PASSWORD:-}" && "$VALKEY_PASSWORD" == *[[:cntrl:]]* ]]; then
     error "VALKEY_PASSWORD must not contain control characters (newline, tab, CR)"
@@ -296,8 +306,12 @@ export NGINX_RESOLVER_BLOCK
 
 # Real client IP (reverse proxy / CDN)
 build_real_ip_block() {
-    local -a cidrs=("10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "fc00::/7" "127.0.0.0/8" "::1/128")
+    local -a cidrs=("127.0.0.0/8" "::1/128")
     local extra line
+
+    if [[ "$NGINX_REAL_IP_TRUST_PRIVATE" == "true" ]]; then
+        cidrs+=("10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "fc00::/7")
+    fi
 
     for extra in ${NGINX_REAL_IP_FROM}; do
         cidrs+=("$extra")
@@ -332,6 +346,21 @@ build_real_ip_block() {
 NGINX_REAL_IP_FROM_BLOCK=$(build_real_ip_block)
 export NGINX_REAL_IP_FROM_BLOCK
 
+build_geo_allow_block() {
+    local name="$1" c
+    for c in $2; do
+        if [[ "$c" =~ ^[0-9a-fA-F:./]+$ ]]; then
+            printf '    %s 1;\n' "$c"
+        else
+            warning "Ignoring invalid CIDR in ${name}: $c" >&2
+        fi
+    done
+}
+NGINX_ORIGIN_AUTH_ALLOW_BLOCK=$(build_geo_allow_block NGINX_ORIGIN_AUTH_ALLOW_FROM "$NGINX_ORIGIN_AUTH_ALLOW_FROM")
+NGINX_STATUS_ALLOW_BLOCK=$(build_geo_allow_block NGINX_STATUS_ALLOW_FROM "$NGINX_STATUS_ALLOW_FROM")
+NGINX_ORIGIN_AUTH_SECRET_RE=$(printf '%s' "$NGINX_ORIGIN_AUTH_SECRET" | sed 's/\./\\./g')
+export NGINX_ORIGIN_AUTH_ALLOW_BLOCK NGINX_STATUS_ALLOW_BLOCK NGINX_ORIGIN_AUTH_SECRET_RE
+
 # Valkey auto-wiring
 if [[ "$VALKEY_ENABLED" == "true" ]]; then
     : "${WP_REDIS_HOST:=127.0.0.1}"
@@ -342,8 +371,9 @@ if [[ "$VALKEY_ENABLED" == "true" ]]; then
     fi
     export WP_REDIS_HOST WP_REDIS_PORT
     info "Valkey enabled; WP_REDIS_HOST=${WP_REDIS_HOST} WP_REDIS_PORT=${WP_REDIS_PORT}"
-    if [[ "$VALKEY_BIND" != "127.0.0.1" && "$VALKEY_BIND" != "localhost" && -z "$VALKEY_PASSWORD" ]]; then
-        warning "VALKEY_BIND=${VALKEY_BIND} without VALKEY_PASSWORD — instance exposed to the network!"
+    if [[ "$VALKEY_BIND" != "127.0.0.1" && "$VALKEY_BIND" != "localhost" && "$VALKEY_BIND" != "::1" && -z "$VALKEY_PASSWORD" ]]; then
+        error "VALKEY_BIND=${VALKEY_BIND} requires VALKEY_PASSWORD (refusing to expose an unauthenticated instance)"
+        exit 1
     fi
 fi
 
@@ -457,6 +487,46 @@ build_pool_env_block() {
     done < <(env)
 }
 
+info "Setting up runtime directories..."
+ensure_root_dir /run/php
+ensure_root_dir /run/nginx
+ensure_root_dir "${LOGS_PATH}"
+ensure_root_dir "${CACHE_PATH}"
+for _dir in "$(dirname "${LOGS_PATH}")" "$(dirname "${CACHE_PATH}")"; do
+    if [[ "$(stat -c %u "$_dir")" != "0" ]]; then
+        warning "${_dir} is not owned by root; entries in it can be replaced by its owner"
+    fi
+done
+while IFS= read -r -d '' _link; do
+    warning "Removing symlink ${_link} from a root-owned directory"
+    rm -f "$_link"
+done < <(find "${LOGS_PATH}" "${CACHE_PATH}" -maxdepth 1 -type l -print0)
+ensure_user_entry "${CACHE_PATH}/press" dir
+ensure_user_entry "${CACHE_PATH}/nginx" dir
+ensure_user_entry "${LOGS_PATH}/php-error.log" file
+ensure_user_entry "${LOGS_PATH}/wp-debug.log" file
+for _log in nginx-access.log nginx-error.log php-fpm.log php-slow.log \
+            cron-presshost.log cron-nginx.log safe-chown.log; do
+    if [[ -f "${LOGS_PATH}/${_log}" ]]; then
+        chown root:"${APP_GROUP}" "${LOGS_PATH}/${_log}"
+        chmod 640 "${LOGS_PATH}/${_log}"
+    fi
+done
+[[ -e "${UPLOADS_PATH}" ]] || ensure_user_entry "${UPLOADS_PATH}" dir
+if [[ "${FIX_OWNERSHIP:-true}" == "true" && -d "${APP_PATH}" && ! -L "${APP_PATH}" ]]; then
+    chown -h "${APP_USER}:${APP_GROUP}" "${APP_PATH}"
+fi
+for _ssl in "${SSL_CERT_PATH}" "${SSL_PRIVATE_PATH}" "${SSL_TRUSTED_CERT_PATH}"; do
+    _dir="$(dirname "$_ssl")"
+    if [[ -d "$_dir" && ! -L "$_dir" && "$(stat -c %U "$_dir")" == "${APP_USER}" ]]; then
+        warning "${_dir} was owned by ${APP_USER}; handing it to root"
+        ensure_root_dir "$_dir"
+        find "$_dir" -maxdepth 1 -type l -delete
+        find "$_dir" -maxdepth 1 -type f -user "${APP_USER}" -exec chown root:root {} +
+    fi
+done
+unset _dir _link _log _ssl
+
 # WP Salts
 _wp_secrets_file="${APP_PATH}/wp-secrets.php"
 _needs_salts=false
@@ -464,29 +534,41 @@ for _salt_key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
                  AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
     [[ -z "${!_salt_key:-}" ]] && _needs_salts=true && break
 done
+if [[ "$_needs_salts" == "true" && -L "$_wp_secrets_file" ]]; then
+    warning "${_wp_secrets_file} is a symlink; replacing it"
+    as_app_user rm -f "$_wp_secrets_file"
+fi
 if [[ "$_needs_salts" == "true" ]] && [[ ! -f "$_wp_secrets_file" ]]; then
     info "Generating WordPress security keys at ${_wp_secrets_file}..."
-    {
+    if {
         echo "<?php"
         for _salt_key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY \
                          AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
             printf "define('%s', '%s');\n" "$_salt_key" "$(openssl rand -base64 48)"
         done
-    } > "$_wp_secrets_file"
-    chown "${APP_USER}:${APP_GROUP}" "$_wp_secrets_file"
-    chmod 640 "$_wp_secrets_file"
-    info "WordPress security keys written."
+    } | write_as_app_user "$_wp_secrets_file" 640; then
+        info "WordPress security keys written."
+    else
+        warning "Could not write ${_wp_secrets_file} as ${APP_USER}; set the salt env vars or fix ownership of ${APP_PATH}"
+    fi
 fi
 unset _wp_secrets_file _needs_salts _salt_key
 
 info "Starting template processing..."
 
-if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
+TPL_STORE=/usr/share/presshost/templates
+while IFS= read -r -d '' _tpl; do
+    mkdir -p "${TPL_STORE}$(dirname "$_tpl")"
+    mv -f "$_tpl" "${TPL_STORE}${_tpl}"
+done < <(find /etc/nginx /etc/php /etc/valkey /etc/logrotate.d -name '*.tpl' -type f -print0 2>/dev/null)
+unset _tpl
+
+if [[ -f ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
     info "PHP-FPM config..."
     POOL_ENV_BLOCK=$(build_pool_env_block)
     export POOL_ENV_BLOCK
     envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION}' \
-    < /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
+    < ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
     > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
 
     if [[ "${PHP_PM}" == "static" ]]; then
@@ -498,11 +580,14 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
         printf '\n; ─── env forwarding (generated by presshost-init) ───\n'
         printf '%s\n' "$POOL_ENV_BLOCK"
     } >> /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
-    rm -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl
 fi
 
 # Send the FPM master error log to ${LOGS_PATH}
 if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf ]]; then
+    if [[ ! -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf.orig ]]; then
+        cp /etc/php/${PHP_VERSION}/fpm/php-fpm.conf /etc/php/${PHP_VERSION}/fpm/php-fpm.conf.orig
+    fi
+    cp /etc/php/${PHP_VERSION}/fpm/php-fpm.conf.orig /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
     sed -i -E "s|^error_log\s*=.*|error_log = ${LOGS_PATH}/php-fpm.log|" \
         /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
     sed -i -E '/^log_level\s*=/d' /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
@@ -511,166 +596,176 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm.conf ]]; then
 fi
 
 # FPM emergency-restart
-if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl ]]; then
     info "PHP-FPM emergency-restart config..."
     envsubst '${PHP_FPM_EMERGENCY_RESTART_THRESHOLD} ${PHP_FPM_EMERGENCY_RESTART_INTERVAL} ${PHP_FPM_PROCESS_CONTROL_TIMEOUT} ${PHP_FPM_LOG_LEVEL}' \
-        < /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl \
+        < ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl \
         >> /etc/php/${PHP_VERSION}/fpm/php-fpm.conf
-    rm -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl
 fi
 
-if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
     envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_COOKIE_SAMESITE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APCU_ENABLED} ${PHP_APCU_SHM_SIZE} ${PHP_APCU_TTL} ${PHP_APCU_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS} ${PHP_ERROR_REPORTING}' \
-    < /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
+    < ${TPL_STORE}/etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
     > /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
 
-    # CLI variant: own disable_functions (default: none, so WP-CLI works fully)
-    # and an explicit opcache.enable_cli toggle.
     sed -e "s|^disable_functions = .*|disable_functions = ${PHP_CLI_DISABLE_FUNCTIONS}|" \
         /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini \
         > /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
     printf 'opcache.enable_cli = %s\n' "${PHP_OPCACHE_ENABLE_CLI}" \
         >> /etc/php/${PHP_VERSION}/cli/conf.d/99-presshost.ini
 
-    rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
 
 # Self-signed SSL cert
+ssl_target_ok() {
+    local path="$1" dir
+    dir="$(dirname "$path")"
+    if [[ -L "$path" ]]; then
+        warning "${path} is a symlink; not generating a self-signed certificate over it"
+        return 1
+    fi
+    mkdir -p "$dir"
+    if [[ "$(stat -c %U "$dir")" == "${APP_USER}" || -n "$(find "$dir" -maxdepth 0 -perm /022)" ]]; then
+        warning "${dir} is writable by ${APP_USER} or group/others; not generating a self-signed certificate there"
+        return 1
+    fi
+}
 if [[ ! -f "${SSL_CERT_PATH}" ]] || [[ ! -f "${SSL_PRIVATE_PATH}" ]]; then
-    info "Generating self-signed SSL certificate at ${SSL_CERT_PATH}..."
-    mkdir -p "$(dirname "${SSL_CERT_PATH}")" "$(dirname "${SSL_PRIVATE_PATH}")"
-    SSL_CN="${NGINX_SERVER_NAME}"
-    [[ -z "${SSL_CN}" || "${SSL_CN}" == "_" ]] && SSL_CN="presshost.local"
-    if openssl req -x509 -nodes -newkey rsa:2048 \
-            -keyout "${SSL_PRIVATE_PATH}" \
-            -out "${SSL_CERT_PATH}" \
-            -days 3650 \
-            -subj "/CN=${SSL_CN}" \
-            -addext "subjectAltName=DNS:${SSL_CN},DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1; then
-        chmod 600 "${SSL_PRIVATE_PATH}" 2>/dev/null || true
-        chmod 644 "${SSL_CERT_PATH}" 2>/dev/null || true
-        info "Self-signed certificate generated for CN=${SSL_CN} (valid 10 years)"
+    if ssl_target_ok "${SSL_CERT_PATH}" && ssl_target_ok "${SSL_PRIVATE_PATH}"; then
+        info "Generating self-signed SSL certificate at ${SSL_CERT_PATH}..."
+        SSL_CN="${NGINX_SERVER_NAME}"
+        [[ -z "${SSL_CN}" || "${SSL_CN}" == "_" ]] && SSL_CN="presshost.local"
+        _ssl_tmp=$(umask 077 && mktemp -d)
+        if openssl req -x509 -nodes -newkey rsa:2048 \
+                -keyout "${_ssl_tmp}/server.key" \
+                -out "${_ssl_tmp}/server.crt" \
+                -days 3650 \
+                -subj "/CN=${SSL_CN}" \
+                -addext "subjectAltName=DNS:${SSL_CN},DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1 \
+            && install -m 600 -o root -g root "${_ssl_tmp}/server.key" "${SSL_PRIVATE_PATH}" \
+            && install -m 644 -o root -g root "${_ssl_tmp}/server.crt" "${SSL_CERT_PATH}"; then
+            info "Self-signed certificate generated for CN=${SSL_CN} (valid 10 years)"
+        else
+            warning "Failed to generate self-signed certificate; nginx will fail to start unless ${SSL_CERT_PATH} and ${SSL_PRIVATE_PATH} are provided"
+        fi
+        rm -rf "$_ssl_tmp"
+        unset _ssl_tmp
     else
-        warning "Failed to generate self-signed certificate; nginx will fail to start unless ${SSL_CERT_PATH} and ${SSL_PRIVATE_PATH} are provided"
+        warning "nginx will fail to start unless ${SSL_CERT_PATH} and ${SSL_PRIVATE_PATH} are provided"
     fi
 fi
 
-if [[ -f /etc/nginx/nginx.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/nginx.conf.tpl ]]; then
     info "NGINX config..."
     envsubst '${APP_USER} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${NGINX_WORKER_PROCESSES} ${NGINX_WORKER_RLIMIT_NOFILE} ${NGINX_WORKER_CONNECTIONS} ${NGINX_RESOLVER_BLOCK} ${NGINX_CLIENT_MAX_BODY_SIZE} ${NGINX_CLIENT_BODY_BUFFER_SIZE} ${NGINX_CLIENT_HEADER_BUFFER_SIZE} ${NGINX_LARGE_CLIENT_HEADER_BUFFERS} ${NGINX_OUTPUT_BUFFERS} ${NGINX_KEEPALIVE_TIMEOUT} ${NGINX_KEEPALIVE_REQUESTS} ${NGINX_CLIENT_BODY_TIMEOUT} ${NGINX_CLIENT_HEADER_TIMEOUT} ${NGINX_SEND_TIMEOUT} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_RATE_LIMIT} ${NGINX_LOGIN_RATE_LIMIT}' \
-    < /etc/nginx/nginx.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/nginx.conf.tpl \
     > /etc/nginx/nginx.conf
-    rm -f /etc/nginx/nginx.conf.tpl
 fi
 
-if [[ -f /etc/nginx/sites-enabled/presshost.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/sites-enabled/presshost.conf.tpl ]]; then
     envsubst '${APP_PATH} ${LOGS_PATH} ${NGINX_LOG_LEVEL} ${SSL_CERT_PATH} ${SSL_PRIVATE_PATH} ${SSL_TRUSTED_CERT_PATH} ${NGINX_SSL_STAPLING} ${NGINX_SSL_STAPLING_VERIFY} ${NGINX_FASTCGI_BUFFER_SIZE} ${NGINX_FASTCGI_BUFFERS} ${NGINX_FASTCGI_BUSY_BUFFERS_SIZE} ${NGINX_FASTCGI_CONNECT_TIMEOUT} ${NGINX_FASTCGI_SEND_TIMEOUT} ${NGINX_FASTCGI_READ_TIMEOUT} ${PHP_VERSION} ${NGINX_SERVER_NAME} ${NGINX_HTTP3_LISTEN} ${NGINX_HTTP3_HEADER} ${NGINX_RATE_BURST} ${NGINX_CONN_LIMIT} ${NGINX_LOGIN_BURST} ${NGINX_HTTP_PORT} ${NGINX_HTTPS_PORT} ${NGINX_HTTP_LISTEN}' \
-    < /etc/nginx/sites-enabled/presshost.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/sites-enabled/presshost.conf.tpl \
     > /etc/nginx/sites-enabled/presshost.conf
-    rm -f /etc/nginx/sites-enabled/presshost.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/headers.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/headers.conf.tpl ]]; then
     envsubst '${NGINX_HSTS_HEADER}' \
-    < /etc/nginx/conf.d/headers.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/conf.d/headers.conf.tpl \
     > /etc/nginx/conf.d/headers.conf
-    rm -f /etc/nginx/conf.d/headers.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/compression.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/compression.conf.tpl ]]; then
     envsubst '${NGINX_GZIP_COMP_LEVEL} ${NGINX_BROTLI_COMP_LEVEL}' \
-    < /etc/nginx/conf.d/compression.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/conf.d/compression.conf.tpl \
     > /etc/nginx/conf.d/compression.conf
-    rm -f /etc/nginx/conf.d/compression.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/status.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/status.conf.tpl ]]; then
     envsubst '${PHP_VERSION}' \
-    < /etc/nginx/conf.d/status.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/conf.d/status.conf.tpl \
     > /etc/nginx/conf.d/status.conf
-    rm -f /etc/nginx/conf.d/status.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/proxy.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/admin-ip-map.conf.tpl ]]; then
+    envsubst '${NGINX_STATUS_ALLOW_BLOCK}' \
+    < ${TPL_STORE}/etc/nginx/conf.d/admin-ip-map.conf.tpl \
+    > /etc/nginx/conf.d/admin-ip-map.conf
+fi
+
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/proxy.conf.tpl ]]; then
     envsubst '${NGINX_REAL_IP_FROM_BLOCK} ${NGINX_REAL_IP_HEADER}' \
-    < /etc/nginx/conf.d/proxy.conf.tpl \
+    < ${TPL_STORE}/etc/nginx/conf.d/proxy.conf.tpl \
     > /etc/nginx/conf.d/proxy.conf
-    rm -f /etc/nginx/conf.d/proxy.conf.tpl
 fi
 
 # FastCGI page cache (on/off + validity windows + zone size)
-if [[ -f /etc/nginx/conf.d/cache-path.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/cache-path.conf.tpl ]]; then
     if [[ "$NGINX_CACHE" == "true" ]]; then
         envsubst '${CACHE_PATH} ${NGINX_CACHE_MAX_SIZE} ${NGINX_CACHE_INACTIVE} ${NGINX_CACHE_KEY_ZONE_SIZE}' \
-        < /etc/nginx/conf.d/cache-path.conf.tpl \
+        < ${TPL_STORE}/etc/nginx/conf.d/cache-path.conf.tpl \
         > /etc/nginx/conf.d/cache-path.conf
     else
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-path.conf
     fi
-    rm -f /etc/nginx/conf.d/cache-path.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/cache-fastcgi.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/cache-fastcgi.conf.tpl ]]; then
     if [[ "$NGINX_CACHE" == "true" ]]; then
         envsubst '${NGINX_CACHE_VALID_OK} ${NGINX_CACHE_VALID_NOT_FOUND}' \
-        < /etc/nginx/conf.d/cache-fastcgi.conf.tpl \
+        < ${TPL_STORE}/etc/nginx/conf.d/cache-fastcgi.conf.tpl \
         > /etc/nginx/conf.d/cache-fastcgi.conf
     else
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-fastcgi.conf
     fi
-    rm -f /etc/nginx/conf.d/cache-fastcgi.conf.tpl
 fi
 
-if [[ -f /etc/nginx/conf.d/cache-purge.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/cache-purge.conf.tpl ]]; then
     if [[ "$NGINX_CACHE" == "true" ]]; then
-        cp /etc/nginx/conf.d/cache-purge.conf.tpl /etc/nginx/conf.d/cache-purge.conf
+        cp ${TPL_STORE}/etc/nginx/conf.d/cache-purge.conf.tpl /etc/nginx/conf.d/cache-purge.conf
     else
         echo "# Cache - Disabled" > /etc/nginx/conf.d/cache-purge.conf
     fi
-    rm -f /etc/nginx/conf.d/cache-purge.conf.tpl
 fi
 
 # CDN cache headers
-if [[ -f /etc/nginx/conf.d/cdn-cache.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/cdn-cache.conf.tpl ]]; then
     if [[ "$NGINX_CDN_CACHE" == "true" ]]; then
         envsubst '${NGINX_CDN_BROWSER_TTL} ${NGINX_CDN_EDGE_TTL} ${NGINX_CDN_SWR} ${NGINX_CDN_STALE_IF_ERROR}' \
-        < /etc/nginx/conf.d/cdn-cache.conf.tpl \
+        < ${TPL_STORE}/etc/nginx/conf.d/cdn-cache.conf.tpl \
         > /etc/nginx/conf.d/cdn-cache.conf
-        cp /etc/nginx/conf.d/cdn-headers.conf.tpl /etc/nginx/conf.d/cdn-headers.conf
+        cp ${TPL_STORE}/etc/nginx/conf.d/cdn-headers.conf.tpl /etc/nginx/conf.d/cdn-headers.conf
     else
         echo "# CDN cache headers - Disabled" > /etc/nginx/conf.d/cdn-cache.conf
         echo "# CDN cache headers - Disabled" > /etc/nginx/conf.d/cdn-headers.conf
     fi
-    rm -f /etc/nginx/conf.d/cdn-cache.conf.tpl /etc/nginx/conf.d/cdn-headers.conf.tpl
 fi
 
 # Origin pull protection (only accept traffic carrying the shared secret)
-if [[ -f /etc/nginx/conf.d/origin-auth-map.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/origin-auth-map.conf.tpl ]]; then
     if [[ -n "$NGINX_ORIGIN_AUTH_SECRET" ]]; then
-        envsubst '${NGINX_ORIGIN_AUTH_SECRET}' \
-        < /etc/nginx/conf.d/origin-auth-map.conf.tpl \
+        envsubst '${NGINX_ORIGIN_AUTH_SECRET_RE} ${NGINX_ORIGIN_AUTH_ALLOW_BLOCK}' \
+        < ${TPL_STORE}/etc/nginx/conf.d/origin-auth-map.conf.tpl \
         > /etc/nginx/conf.d/origin-auth-map.conf
-        cp /etc/nginx/conf.d/origin-auth-check.conf.tpl /etc/nginx/conf.d/origin-auth-check.conf
-        info "Origin pull protection enabled (X-Origin-Auth header required from public networks)"
+        chmod 640 /etc/nginx/conf.d/origin-auth-map.conf
+        cp ${TPL_STORE}/etc/nginx/conf.d/origin-auth-check.conf.tpl /etc/nginx/conf.d/origin-auth-check.conf
+        info "Origin pull protection enabled (X-Origin-Auth header required except from loopback/NGINX_ORIGIN_AUTH_ALLOW_FROM)"
     else
         echo "# Origin auth - Disabled" > /etc/nginx/conf.d/origin-auth-map.conf
         echo "# Origin auth - Disabled" > /etc/nginx/conf.d/origin-auth-check.conf
     fi
-    rm -f /etc/nginx/conf.d/origin-auth-map.conf.tpl /etc/nginx/conf.d/origin-auth-check.conf.tpl
 fi
 
 # Spam keyword blocking
-if [[ -f /etc/nginx/conf.d/block-spam.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/nginx/conf.d/block-spam.conf.tpl ]]; then
     if [[ "$NGINX_BLOCK_SPAM" == "true" ]]; then
-        cp /etc/nginx/conf.d/block-spam.conf.tpl /etc/nginx/conf.d/block-spam.conf
+        cp ${TPL_STORE}/etc/nginx/conf.d/block-spam.conf.tpl /etc/nginx/conf.d/block-spam.conf
     else
         echo "# Spam blocking - Disabled (set NGINX_BLOCK_SPAM=true to enable)" > /etc/nginx/conf.d/block-spam.conf
     fi
-    rm -f /etc/nginx/conf.d/block-spam.conf.tpl
 fi
 
 # Redis/Valkey local server
-if [[ -f /etc/valkey/valkey.conf.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/valkey/valkey.conf.tpl ]]; then
     if [[ "$VALKEY_ENABLED" == "true" ]]; then
         VALKEY_SAVE_LINE='save ""'
         [[ -n "$VALKEY_SAVE" ]] && VALKEY_SAVE_LINE="save ${VALKEY_SAVE}"
@@ -684,86 +779,84 @@ if [[ -f /etc/valkey/valkey.conf.tpl ]]; then
         mkdir -p /run/valkey
         chown "${APP_USER}:${APP_GROUP}" /run/valkey
         envsubst '${VALKEY_BIND} ${VALKEY_PORT} ${VALKEY_MAXMEMORY} ${VALKEY_MAXMEMORY_POLICY} ${VALKEY_SAVE_LINE} ${VALKEY_REQUIREPASS_LINE}' \
-        < /etc/valkey/valkey.conf.tpl \
+        < ${TPL_STORE}/etc/valkey/valkey.conf.tpl \
         > /etc/valkey/valkey.conf
         chown "${APP_USER}:${APP_GROUP}" /etc/valkey/valkey.conf
         chmod 755 /etc/valkey
         chmod 600 /etc/valkey/valkey.conf
         info "Valkey config generated (${VALKEY_BIND}:${VALKEY_PORT}, maxmemory ${VALKEY_MAXMEMORY})"
     fi
-    rm -f /etc/valkey/valkey.conf.tpl
 fi
 
-if [[ -f /etc/logrotate.d/presshost.tpl ]]; then
+if [[ -f ${TPL_STORE}/etc/logrotate.d/presshost.tpl ]]; then
     info "logrotate config..."
     envsubst '${LOGS_PATH} ${LOG_MAX_SIZE} ${LOG_MAX_AGE} ${APP_USER} ${APP_GROUP} ${PHP_VERSION}' \
-    < /etc/logrotate.d/presshost.tpl \
+    < ${TPL_STORE}/etc/logrotate.d/presshost.tpl \
     > /etc/logrotate.d/presshost
-    rm -f /etc/logrotate.d/presshost.tpl
 fi
-
-# Runtime directories
-info "Setting up runtime directories..."
-mkdir -p /run/nginx /run/php
 
 # Default index.php for empty installations
 if [[ ! -f "${APP_PATH}/index.php" && ! -f "${APP_PATH}/wp-settings.php" ]]; then
     info "No WordPress install or index.php found at ${APP_PATH}"
     if [[ -f /tmp/index.php ]]; then
-        cp /tmp/index.php "${APP_PATH}/index.php"
-        chown "${APP_USER}:${APP_GROUP}" "${APP_PATH}/index.php"
-        info "Default index.php copied to ${APP_PATH}"
+        if as_app_user cp /tmp/index.php "${APP_PATH}/index.php"; then
+            info "Default index.php copied to ${APP_PATH}"
+        else
+            warning "Could not copy the default index.php into ${APP_PATH} as ${APP_USER}"
+        fi
     else
         warning "Default index.php not found at /tmp/index.php"
     fi
 fi
 
-# WordPress cache symlink
 if [[ -d "${APP_PATH}/wp-content" ]]; then
-    if [[ -d "${APP_PATH}/wp-content/cache" ]] && [[ ! -L "${APP_PATH}/wp-content/cache" ]]; then
-        if [[ -n "$(ls -A "${APP_PATH}/wp-content/cache" 2>/dev/null)" ]]; then
-            mkdir -p "${CACHE_PATH}/press"
-            cp -a "${APP_PATH}/wp-content/cache/." "${CACHE_PATH}/press"
-        fi
-        rm -rf "${APP_PATH}/wp-content/cache"
+    if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then
+        find "${APP_PATH}/wp-content" -maxdepth 1 \( ! -user "${APP_USER}" -o ! -group "${APP_GROUP}" \) \
+            -execdir chown -h "${APP_USER}:${APP_GROUP}" {} + 2>/dev/null || true
+        for _sub in cache uploads; do
+            if [[ -d "${APP_PATH}/wp-content/${_sub}" && ! -L "${APP_PATH}/wp-content/${_sub}" ]]; then
+                safe-chown "${APP_PATH}/wp-content/${_sub}" || true
+            fi
+        done
+        unset _sub
     fi
+    if as_app_user bash -s "${APP_PATH}/wp-content" "${CACHE_PATH}/press" "${UPLOADS_PATH}" <<'MIGRATE'
+set -euo pipefail
+content="$1" cache="$2" uploads="$3"
 
-    if [[ -L "${APP_PATH}/wp-content/cache" ]]; then
-        rm -f "${APP_PATH}/wp-content/cache"
+if [[ -d "${content}/cache" && ! -L "${content}/cache" ]]; then
+    if [[ -n "$(ls -A "${content}/cache" 2>/dev/null)" ]]; then
+        cp -a "${content}/cache/." "${cache}"
     fi
-
-    mkdir -p "${CACHE_PATH}/press"
-    ln -sf "${CACHE_PATH}/press" "${APP_PATH}/wp-content/cache"
-    info "Cache symlink created"
+    rm -rf "${content}/cache"
 fi
+[[ -L "${content}/cache" ]] && rm -f "${content}/cache"
+ln -sf "${cache}" "${content}/cache"
 
-# WordPress uploads symlink
-if [[ -d "${APP_PATH}/wp-content" ]]; then
-    if [[ -d "${APP_PATH}/wp-content/uploads" ]] && [[ ! -L "${APP_PATH}/wp-content/uploads" ]]; then
-        mkdir -p "${UPLOADS_PATH}"
-        if [[ -n "$(ls -A "${APP_PATH}/wp-content/uploads" 2>/dev/null)" ]]; then
-            cp -a "${APP_PATH}/wp-content/uploads/." "${UPLOADS_PATH}/"
-        fi
-        rm -rf "${APP_PATH}/wp-content/uploads"
+if [[ -d "${content}/uploads" && ! -L "${content}/uploads" ]]; then
+    if [[ -n "$(ls -A "${content}/uploads" 2>/dev/null)" ]]; then
+        cp -a "${content}/uploads/." "${uploads}/"
     fi
-
-    if [[ -L "${APP_PATH}/wp-content/uploads" ]]; then
-        rm -f "${APP_PATH}/wp-content/uploads"
+    rm -rf "${content}/uploads"
+fi
+[[ -L "${content}/uploads" ]] && rm -f "${content}/uploads"
+ln -sf "${uploads}" "${content}/uploads"
+MIGRATE
+    then
+        info "Cache and uploads symlinks created"
+    else
+        warning "Could not set up wp-content cache/uploads symlinks as ${APP_USER}; check ownership of ${APP_PATH}/wp-content and ${UPLOADS_PATH}"
     fi
-
-    ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
-    info "Uploads symlink created"
 fi
 
 # Ownership remediation
 if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then
-    _chown_paths=("${APP_PATH}" "${CACHE_PATH}" "${LOGS_PATH}")
+    _chown_paths=("${APP_PATH}" "${CACHE_PATH}/press" "${CACHE_PATH}/nginx")
     if [[ "${FIX_UPLOADS_OWNERSHIP:-false}" == "true" ]]; then
         _chown_paths+=("${UPLOADS_PATH}")
     else
         info "Skipping ownership fix on ${UPLOADS_PATH}"
     fi
-    mkdir -p "${LOGS_PATH}"
     info "Fixing ownership in the background (log: ${LOGS_PATH}/safe-chown.log)"
     nohup safe-chown "${_chown_paths[@]}" >> "${LOGS_PATH}/safe-chown.log" 2>&1 &
     disown

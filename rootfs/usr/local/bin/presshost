@@ -291,8 +291,8 @@ show_installation_info() {
     fi
     
     local site_url site_title
-    site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
-    site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "unknown")
+    site_url=$(wp option get home --allow-root --path="$PRESS_WP_DIR" </dev/null 2>/dev/null || echo "unknown")
+    site_title=$(wp option get blogname --allow-root --path="$PRESS_WP_DIR" </dev/null 2>/dev/null || echo "unknown")
     
     calc_dialog_size 18 70
     
@@ -687,16 +687,17 @@ fix_perms() {
         return 1
     fi
 
+    local cache_dir="${CACHE_PATH:-/site/cache}"
     local paths=(
         "${APP_PATH:-/site/press}"
         "${UPLOADS_PATH:-/site/uploads}"
-        "${CACHE_PATH:-/site/cache}"
-        "${LOGS_PATH:-/site/logs}"
+        "${cache_dir}/press"
+        "${cache_dir}/nginx"
     )
 
     local rc=0
     for p in "${paths[@]}"; do
-        if [[ ! -d "$p" ]]; then
+        if [[ -L "$p" || ! -d "$p" ]]; then
             info "Skipping ${p} (not a directory)"
             continue
         fi
@@ -705,24 +706,26 @@ fix_perms() {
             error "chown failed on ${p}"
             rc=1
         fi
-        find "$p" -type d -exec chmod 755 {} + 2>/dev/null || true
-        find "$p" -type f -exec chmod 644 {} + 2>/dev/null || true
+        as_app_user find "$p" -type d -exec chmod 755 {} + 2>/dev/null || true
+        as_app_user find "$p" -type f -exec chmod 644 {} + 2>/dev/null || true
     done
 
     # Sensitive files: tighter perms.
     local press_dir="${APP_PATH:-/site/press}"
     for sensitive in "${press_dir}/wp-config.php" "${press_dir}/wp-secrets.php"; do
-        if [[ -f "$sensitive" ]]; then
-            chmod 640 "$sensitive" 2>/dev/null || true
+        if [[ -f "$sensitive" && ! -L "$sensitive" ]]; then
+            as_app_user chmod 640 "$sensitive" 2>/dev/null || true
             info "Locked down ${sensitive} (640)"
         fi
     done
 
+    ensure_root_dir "$cache_dir" || rc=1
     local logs_dir="${LOGS_PATH:-/site/logs}"
-    if [[ -d "$logs_dir" ]]; then
-        chmod 750 "$logs_dir" 2>/dev/null || true
-        find "$logs_dir" -type f -exec chmod 640 {} + 2>/dev/null || true
-        info "Locked down ${logs_dir} (dir 750, files 640)"
+    if ensure_root_dir "$logs_dir"; then
+        find "$logs_dir" -maxdepth 1 -type f -exec chmod 640 {} + 2>/dev/null || true
+        info "Locked down ${logs_dir} (root-owned dir 755, files 640)"
+    else
+        rc=1
     fi
 
     if [[ $rc -eq 0 ]]; then
@@ -739,7 +742,8 @@ main() {
             -h|--help|help)
                 cat <<'EOF'
 Usage: presshost              Run interactive installer/menu
-       presshost fix-perms    Reset owner+permissions on /site/{press,uploads,cache,logs}
+       presshost fix-perms    Reset owner+permissions on /site/{press,uploads,cache/press,cache/nginx}
+                              and keep /site/{cache,logs} root-owned
        presshost help         Show this message
 EOF
                 exit 0

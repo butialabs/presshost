@@ -8,7 +8,12 @@ map $http_x_wp_nonce $cdn_has_nonce {
     ~. 1;
 }
 
-map "$skip_cache:$cdn_has_auth:$cdn_has_nonce" $cdn_bypass {
+map $upstream_http_set_cookie $cdn_sets_cookie {
+    default 0;
+    ~. 1;
+}
+
+map "$skip_cache:$cdn_has_auth:$cdn_has_nonce:$cdn_sets_cookie" $cdn_bypass {
     default 0;
     ~*1 1;
 }

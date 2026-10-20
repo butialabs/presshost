@@ -8,7 +8,7 @@ services:
       SITEURL: ${SITEURL:-https://your-domain.xyz}
       DB_NAME: ${DB_NAME:-presshost}
       DB_USER: ${DB_USER:-presshost}
-      DB_PASSWORD: ${DB_PASSWORD:-p@ssw0rd}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       DB_HOST: ${DB_HOST:-db}
       TZ: ${TZ:-UTC}
     volumes:
@@ -43,10 +43,10 @@ services:
     container_name: db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-p@ssw0rd}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: ${DB_NAME:-presshost}
       MYSQL_USER: ${DB_USER:-presshost}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-p@ssw0rd}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - ./presshost/db/data:/var/lib/mysql
     networks:

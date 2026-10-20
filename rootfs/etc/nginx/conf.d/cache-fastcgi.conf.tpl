@@ -7,6 +7,6 @@ fastcgi_cache_lock_timeout 5s;
 fastcgi_cache_revalidate on;
 fastcgi_cache PRESSHOST;
 fastcgi_cache_bypass $skip_cache;
-fastcgi_no_cache $skip_cache;
+fastcgi_no_cache $skip_cache $upstream_http_set_cookie;
 add_header X-FastCGI-Cache $upstream_cache_status;
 fastcgi_ignore_headers Cache-Control Expires Set-Cookie;

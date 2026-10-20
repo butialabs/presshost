@@ -2,7 +2,19 @@
 set -euo pipefail
 
 if [[ "${EUID}" -eq 0 ]]; then
-    exec runuser -u "${APP_USER:-www-data}" -- /usr/local/bin/wp-cli.phar "$@"
+    for _var in $(compgen -e); do
+        case "$_var" in
+            NGINX_*|VALKEY_*|INSTALL_PASS|INSTALL_PASS_FILE) unset "$_var" ;;
+        esac
+    done
+    unset _var
+
+    _user="${APP_USER:-www-data}"
+    _group="${APP_GROUP:-www-data}"
+    if [[ -t 0 && -t 1 ]]; then
+        exec runuser --pty -u "$_user" -g "$_group" -- /usr/local/bin/wp-cli.phar "$@"
+    fi
+    exec setsid --wait runuser -u "$_user" -g "$_group" -- /usr/local/bin/wp-cli.phar "$@"
 fi
 
 exec /usr/local/bin/wp-cli.phar "$@"

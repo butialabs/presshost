@@ -84,7 +84,8 @@ http {
 
     map $http_x_forwarded_proto $real_scheme {
         default $scheme;
-        ~. $http_x_forwarded_proto;
+        ~*^https$ https;
+        ~*^http$ http;
     }
 
     map $real_scheme $real_https {
@@ -132,7 +133,12 @@ http {
         POST 1;
     }
 
-    map "$skip_cache_uri:$skip_cache_cookie:$skip_cache_method" $skip_cache {
+    map $http_authorization $skip_cache_auth {
+        default 0;
+        ~. 1;
+    }
+
+    map "$skip_cache_uri:$skip_cache_cookie:$skip_cache_method:$skip_cache_auth" $skip_cache {
         default 0;
         ~*1 1;
     }
@@ -146,6 +152,7 @@ http {
     include /etc/nginx/conf.d/cache-path.conf;
     include /etc/nginx/conf.d/cdn-cache.conf;
     include /etc/nginx/conf.d/origin-auth-map.conf;
+    include /etc/nginx/conf.d/admin-ip-map.conf;
 
     include /etc/nginx/conf.d/custom-nginx.conf;
 

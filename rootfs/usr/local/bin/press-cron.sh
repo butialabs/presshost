@@ -88,7 +88,7 @@ run_press_cron_http() {
 
 run_press_cron_cli() {
     info "Running Press cron events" >> "${LOG_FILE}" 2>&1
-    if runuser -u "${APP_USER}" -- /usr/local/bin/wp --path="${APP_PATH}" cron event run --due-now >> "${LOG_FILE}" 2>&1; then
+    if /usr/local/bin/wp --path="${APP_PATH}" cron event run --due-now </dev/null >> "${LOG_FILE}" 2>&1; then
         success "Press cron events completed successfully" >> "${LOG_FILE}" 2>&1
         return 0
     fi

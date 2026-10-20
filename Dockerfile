@@ -126,7 +126,10 @@ ENV TZ=UTC \
     NGINX_CLOUDFLARE_REAL_IP=false \
     NGINX_REAL_IP_HEADER=X-Forwarded-For \
     NGINX_REAL_IP_FROM="" \
+    NGINX_REAL_IP_TRUST_PRIVATE=true \
     NGINX_ORIGIN_AUTH_SECRET="" \
+    NGINX_ORIGIN_AUTH_ALLOW_FROM="" \
+    NGINX_STATUS_ALLOW_FROM="" \
     NGINX_SSL_STAPLING="off" \
     NGINX_SSL_STAPLING_VERIFY="off" \
     SSL_CERT_PATH="/site/ssl/server.crt" \
@@ -224,15 +227,17 @@ RUN set -eux; \
 
 RUN set -eux; \
     mkdir -p \
-        /site/press /site/uploads /site/cache /site/logs /site/ssl \
+        /site/press /site/uploads /site/cache/press /site/cache/nginx /site/logs /site/ssl \
         ${WP_CLI_DIR} ${WP_CLI_CACHE_DIR} ${WP_CLI_PACKAGES_DIR} \
         /run/nginx /run/php /run/valkey \
         /home/www-data \
         /etc/presshost; \
+    chown root:root /site /site/cache /site/logs /site/ssl /run/nginx /run/php; \
+    chmod 755 /site /site/cache /site/logs /site/ssl /run/nginx /run/php; \
     chown -R www-data:www-data \
-        /site \
+        /site/press /site/uploads /site/cache/press /site/cache/nginx \
         ${WP_CLI_DIR} \
-        /run/nginx /run/php /run/valkey \
+        /run/valkey \
         /home/www-data
 
 COPY --chmod=755 rootfs/usr/local/bin/ /usr/local/bin/

@@ -92,9 +92,35 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+as_app_user() {
+    runuser -u "${APP_USER:-www-data}" -g "${APP_GROUP:-www-data}" -- "$@"
+}
+
+ensure_root_dir() {
+    local dir="$1"
+    if [[ -L "$dir" ]]; then
+        error "Refusing to use ${dir}: it is a symlink"
+        return 1
+    fi
+    mkdir -p "$dir"
+    chown root:root "$dir"
+    chmod 755 "$dir"
+}
+
+ensure_user_entry() {
+    local path="$1" kind="${2:-file}"
+    [[ -L "$path" ]] && rm -f "$path"
+    if [[ "$kind" == "dir" ]]; then
+        mkdir -p "$path"
+    elif [[ ! -e "$path" ]]; then
+        : > "$path"
+    fi
+    chown -h "${APP_USER:-www-data}:${APP_GROUP:-www-data}" "$path"
+}
+
 export -f error warning info debug success critical trace
 export -f _resolve_log_level _log_enabled
-export -f command_exists
+export -f command_exists as_app_user ensure_root_dir ensure_user_entry
 
 WHIPTAIL_BACKTITLE="${WHIPTAIL_BACKTITLE:-PressHost}"
 WHIPTAIL_DEFAULT_HEIGHT=20
@@ -525,19 +551,28 @@ readonly PRESS_DEFAULT_SKIP_EMAIL="true"
 readonly PRESS_DEFAULT_LOCALE="en_US"
 
 generate_local_salts() {
-    local target_file="$1"
+    local target_file="${1:-}"
     local keys=(AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT)
-    {
-        echo "<?php"
-        local key value
-        for key in "${keys[@]}"; do
-            value=$(openssl rand -base64 64 | tr -d '\n\r' | head -c 64)
-            value="${value//\'/}"
-            printf "define('%s', '%s');\n" "$key" "$value"
-        done
-    } > "$target_file"
+    local content key value
+    content="<?php"$'\n'
+    for key in "${keys[@]}"; do
+        value=$(openssl rand -base64 64 | tr -d '\n\r' | head -c 64)
+        value="${value//\'/}"
+        content+=$(printf "define('%s', '%s');" "$key" "$value")$'\n'
+    done
+    if [[ -n "$target_file" ]]; then
+        printf '%s' "$content" > "$target_file"
+    else
+        printf '%s' "$content"
+    fi
 }
 export -f generate_local_salts
+
+write_as_app_user() {
+    local file="$1" mode="${2:-640}"
+    as_app_user sh -c 'umask 077; cat > "$1" && chmod "$2" "$1"' _ "$file" "$mode"
+}
+export -f write_as_app_user
 
 generate_password() {
     local length="${1:-16}"
@@ -616,13 +651,16 @@ install_press_files() {
     info "Installing ${press_name} files..."
     mkdir -p "$PRESS_WP_DIR"
 
+    chown -R "${PRESS_USER}:${PRESS_GROUP}" "$source_dir"
+    chmod 755 "$(dirname "$source_dir")"
+
     info "Copying ${press_name} files..."
-    if ! cp -rf "${source_dir}"/. "$PRESS_WP_DIR/"; then
+    if ! as_app_user cp -rf "${source_dir}"/. "$PRESS_WP_DIR/"; then
         error "Failed to copy ${press_name} files"
         return 1
     fi
     success "${press_name} files copied successfully"
-    rm -f "${PRESS_WP_DIR}/wp-config-sample.php"
+    as_app_user rm -f "${PRESS_WP_DIR}/wp-config-sample.php"
 
     set_press_permissions
 }
@@ -630,8 +668,8 @@ install_press_files() {
 set_press_permissions() {
     info "Setting file permissions..."
     chown -R "${PRESS_USER}:${PRESS_GROUP}" "$PRESS_WP_DIR"
-    find "$PRESS_WP_DIR" -type d -exec chmod 755 {} +
-    find "$PRESS_WP_DIR" -type f -exec chmod 644 {} +
+    as_app_user find "$PRESS_WP_DIR" -type d -exec chmod 755 {} +
+    as_app_user find "$PRESS_WP_DIR" -type f -exec chmod 644 {} +
     success "File permissions configured"
 }
 
@@ -639,9 +677,7 @@ setup_press_content() {
     info "Setting up wp-content structure..."
     local dir
     for dir in uploads plugins themes upgrade cache; do
-        local full_path="${PRESS_WP_DIR}/wp-content/${dir}"
-        mkdir -p "$full_path"
-        chown "${PRESS_USER}:${PRESS_GROUP}" "$full_path"
+        as_app_user mkdir -p "${PRESS_WP_DIR}/wp-content/${dir}"
     done
     success "wp-content structure configured"
 }
@@ -708,7 +744,7 @@ verify_press_installation() {
     fi
     
     if [[ -z "$PRESS_VERSION" ]] && command_exists wp; then
-        PRESS_VERSION=$(wp core version --allow-root --path="$PRESS_WP_DIR" 2>/dev/null || echo "")
+        PRESS_VERSION=$(wp core version --allow-root --path="$PRESS_WP_DIR" </dev/null 2>/dev/null || echo "")
     fi
 
     [[ -z "$PRESS_VERSION" ]] && PRESS_VERSION="unknown"
@@ -716,7 +752,7 @@ verify_press_installation() {
 }
 
 check_press_installed() {
-    "$PRESS_WP_CLI" core is-installed --allow-root --path="$PRESS_WP_DIR" 2>/dev/null
+    "$PRESS_WP_CLI" core is-installed --allow-root --path="$PRESS_WP_DIR" </dev/null 2>/dev/null
 }
 
 create_press_config() {
@@ -731,9 +767,7 @@ create_press_config() {
         return 0
     fi
 
-    cp "$source_config" "$target"
-    chown "${PRESS_USER}:${PRESS_GROUP}" "$target"
-    chmod 640 "$target"
+    write_as_app_user "$target" 640 < "$source_config"
     success "wp-config.php copied successfully"
 }
 
@@ -747,9 +781,7 @@ generate_press_secrets() {
     fi
 
     info "Generating wp-secrets.php with locally-generated salt keys..."
-    generate_local_salts "$secrets_file"
-    chown "${PRESS_USER}:${PRESS_GROUP}" "$secrets_file"
-    chmod 640 "$secrets_file"
+    generate_local_salts | write_as_app_user "$secrets_file" 640
     success "Salt keys generated successfully"
 }
 
@@ -812,14 +844,15 @@ run_press_install() {
     )
     [[ "$skip_email" == "true" ]] && install_args+=("--skip-email")
 
-    if "$PRESS_WP_CLI" "${install_args[@]}"; then
+    if "$PRESS_WP_CLI" "${install_args[@]}" </dev/null; then
         success "${press_name} installed successfully!"
         if [[ -n "$generated_pass" ]]; then
             local pass_file="${LOGS_PATH:-/site/logs}/initial-admin-password"
             local umask_old
             umask_old=$(umask)
             umask 077
-            if printf '%s\n' "$generated_pass" > "$pass_file" 2>/dev/null; then
+            rm -f "$pass_file" 2>/dev/null || true
+            if (set -o noclobber; printf '%s\n' "$generated_pass" > "$pass_file") 2>/dev/null; then
                 umask "$umask_old"
                 chmod 600 "$pass_file" 2>/dev/null || true
                 echo ""

@@ -1,10 +1,7 @@
-location ~ /purge(/.*) {
-    allow 127.0.0.1;
-    allow ::1;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    allow 192.168.0.0/16;
-    deny all;
+location ~ ^/purge(/.*)$ {
+    if ($presshost_admin_ip = 0) {
+        return 403;
+    }
 
-    fastcgi_cache_purge PRESSHOST "$scheme$request_method$host$1$is_logged_in";
+    fastcgi_cache_purge PRESSHOST "$real_scheme$request_method$http_host$1$is_logged_in";
 }
