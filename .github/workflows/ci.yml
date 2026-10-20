@@ -3,6 +3,9 @@ name: 🛠️ CI
 on:
   push:
 
+permissions:
+  contents: read
+
 env:
   IMAGE_NAME: presshost:latest
   CONTAINER_NAME: presshost
@@ -312,6 +315,16 @@ jobs:
 
           R4=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -D - -o /dev/null -H 'Authorization: Basic dXNlcjpwYXNz' http://localhost/wp-json/")
           assert_contains "$R4" "CDN-Cache-Control: no-store" "authenticated REST call gets no-store"
+          assert_contains "$R4" "X-FastCGI-Cache: BYPASS" "authenticated REST call bypasses the FastCGI cache"
+
+          PEER_STATUS=$(dexec "$CONTAINER_NAME" sh -c "curl -s -o /dev/null -w '%{http_code}' http://${CONTAINER_NAME}-cdn/nginx-status")
+          assert_contains "$PEER_STATUS" "403" "/nginx-status denied to another container on the private network"
+          PEER_PURGE=$(dexec "$CONTAINER_NAME" sh -c "curl -s -o /dev/null -w '%{http_code}' http://${CONTAINER_NAME}-cdn/purge/")
+          assert_contains "$PEER_PURGE" "403" "/purge denied to another container on the private network"
+          SPOOF_STATUS=$(dexec "$CONTAINER_NAME" sh -c "curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-For: 127.0.0.1' http://${CONTAINER_NAME}-cdn/nginx-status")
+          assert_contains "$SPOOF_STATUS" "403" "/nginx-status not unlocked by a spoofed X-Forwarded-For"
+          LOCAL_STATUS=$(dexec "${CONTAINER_NAME}-cdn" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost/nginx-status")
+          assert_contains "$LOCAL_STATUS" "200" "/nginx-status allowed from loopback"
 
           docker rm -f "${CONTAINER_NAME}-cdn" 2>/dev/null || true
           end_step
@@ -406,6 +419,18 @@ jobs:
           assert_not_contains "$POOL_FILE" 'env[DB_PASSWORD_FILE]' "_FILE var itself not forwarded to pool"
 
           docker rm -f "${CONTAINER_NAME}-file" 2>/dev/null || true
+
+          docker rm -f "${CONTAINER_NAME}-nofile" 2>/dev/null || true
+          docker run -d --name "${CONTAINER_NAME}-nofile" \
+            --network "$NETWORK" \
+            -e SITEURL=http://localhost \
+            -e DB_HOST="$DB_CONTAINER" -e DB_NAME="$DB_NAME" -e DB_USER="$DB_USER" \
+            -e NGINX_ORIGIN_AUTH_SECRET_FILE=/run/secrets/does-not-exist \
+            "$IMAGE_NAME" >/dev/null
+          sleep 8
+          NOFILE_LOGS=$(docker logs "${CONTAINER_NAME}-nofile" 2>&1 || true)
+          assert_contains "$NOFILE_LOGS" "missing or unreadable" "missing _FILE secret fails init closed"
+          docker rm -f "${CONTAINER_NAME}-nofile" 2>/dev/null || true
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
@@ -527,6 +552,23 @@ jobs:
 
           SAFE_FIX=$(dexec "$CONTAINER_NAME" sh -c "touch /site/press/.ownertest && chown root:root /site/press/.ownertest && safe-chown /site/press >/dev/null 2>&1 && stat -c '%U' /site/press/.ownertest; rm -f /site/press/.ownertest")
           assert_contains "$SAFE_FIX" "$APP_USER" "safe-chown fixes a single root-owned file"
+          end_step
+
+          # ──────────────────────────────────────────────────────────────────────
+          step "Root-owned directories (no root writes into app-owned trees)"
+          # ──────────────────────────────────────────────────────────────────────
+          for d in /site /site/logs /site/cache /site/ssl /run/php /run/nginx; do
+            OWNER=$(dexec "$CONTAINER_NAME" stat -c '%U' "$d")
+            if [ "$OWNER" = "root" ]; then pass "$d owned by root"; else fail "$d expected root, got $OWNER"; fi
+          done
+          for p in /site/cache/press /site/cache/nginx /site/logs/php-error.log /site/logs/wp-debug.log; do
+            OWNER=$(dexec "$CONTAINER_NAME" stat -c '%U' "$p")
+            if [ "$OWNER" = "$APP_USER" ]; then pass "$p owned by $APP_USER"; else fail "$p expected $APP_USER, got $OWNER"; fi
+          done
+          PLANT=$(dexec "$CONTAINER_NAME" sh -c "runuser -u $APP_USER -- ln -s /tmp/canary /site/logs/planted.log 2>&1 && echo planted || echo refused")
+          assert_contains "$PLANT" "refused" "$APP_USER cannot plant entries in /site/logs"
+          WP_ENV=$(dexec "$CONTAINER_NAME" sh -c "NGINX_ORIGIN_AUTH_SECRET=leak INSTALL_PASS=leak /usr/local/bin/wp eval 'echo \"env:\" . getenv(\"NGINX_ORIGIN_AUTH_SECRET\") . getenv(\"INSTALL_PASS\") . \":\" . posix_getpwuid(posix_geteuid())[\"name\"];' --path=/site/press --skip-wordpress 2>/dev/null </dev/null || true")
+          assert_contains "$WP_ENV" "env::$APP_USER" "wp wrapper runs as $APP_USER without NGINX_*/INSTALL_PASS"
           end_step
 
           # ──────────────────────────────────────────────────────────────────────
