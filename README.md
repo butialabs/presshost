@@ -15,6 +15,7 @@
 - 🧠 Real caching support, works well with WP Super Cache, W3 Total Cache, WP Fastest Cache, and also with NGINX FastCGI Cache (via NGINX Helper).
 - 🌐 CDN-ready without plugins!
 - 🗄️ Optional local Redis/Valkey server
+- ☁️ Optional S3-compatible uploads (AWS, R2, MinIO, B2…)
 - 🔐 Docker secrets (`*_FILE`) supported everywhere, including PHP-FPM requests.
 - 📦 Separate code, uploads, cache, and logs!
 - 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
@@ -376,7 +377,7 @@ PHP-FPM runs with `clear_env=yes`. The init script forwards environment variable
 | `INSTALL_*` | installer variables |
 | First-party list | salts (`AUTH_KEY`…`NONCE_SALT`), `SITEURL`, `TZ`, `LOGS_PATH`, `UPLOADS_PATH`, `CACHE_PATH`, `APP_PATH`, `WPLANG`, `FS_METHOD`, `FORCE_SSL_*`, `AUTOSAVE_INTERVAL`, `MEDIA_TRASH`, `DISABLE_NAG_NOTICES`, `DISABLE_WP_CRON`, `DISALLOW_FILE_*`, `AUTOMATIC_UPDATER_DISABLED`, `SAVEQUERIES` |
 
-**Not forwarded** (never visible to PHP / `phpinfo()`): `NGINX_*`, `PHP_*`, `VALKEY_*`, `HOME`, `PATH`, and any unrelated container env vars.
+**Not forwarded** (never visible to PHP / `phpinfo()`): `NGINX_*`, `PHP_*`, `VALKEY_*`, `S3_UPLOADS_*`, `HOME`, `PATH`, and any unrelated container env vars.
 
 Inside `wp-config.php`, every forwarded `WP_*` and `PRESS_*` variable is **automatically defined as a constant** (`PRESS_FOO` -> `FOO`, `WP_FOO` -> `WP_FOO`) with boolean/int coercion. Explicit `define()`s always win. 
 
@@ -524,6 +525,57 @@ services:
     networks:
       - presshost
 ```
+
+### S3 Uploads
+
+Mounts an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, …) on `UPLOADS_PATH` with a local VFS cache. WordPress/ClassicPress keeps writing to `wp-content/uploads` as usual, no offload plugin needed, and every replica shares the same media library.
+
+```yaml
+services:
+  presshost:
+    devices:
+      - /dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined # only on AppArmor hosts (Ubuntu)
+    environment:
+      S3_UPLOADS_ENABLED: "true"
+      S3_UPLOADS_PROVIDER: Cloudflare
+      S3_UPLOADS_ENDPOINT: https://<account-id>.r2.cloudflarestorage.com
+      S3_UPLOADS_BUCKET: my-site-media
+      S3_UPLOADS_ACCESS_KEY_ID_FILE: /run/secrets/s3_key_id
+      S3_UPLOADS_SECRET_ACCESS_KEY_FILE: /run/secrets/s3_secret
+    volumes:
+      # remove the ./presshost/uploads:/site/uploads volume
+      - ./presshost/cache:/site/cache # VFS cache lives in /site/cache/rclone
+```
+
+| Variable                         | Default | Description |
+| -------------------------------- | ------- | ----------- |
+| `S3_UPLOADS_ENABLED`             | `false` | Mount the bucket on `UPLOADS_PATH` |
+| `S3_UPLOADS_PROVIDER`            | `AWS`   | rclone S3 provider (`AWS`, `Cloudflare`, `Minio`, `Wasabi`, `DigitalOcean`, `Other`, …) |
+| `S3_UPLOADS_ENDPOINT`            | ``      | Endpoint URL (required for non-AWS providers) |
+| `S3_UPLOADS_REGION`              | ``      | Bucket region |
+| `S3_UPLOADS_BUCKET`              | ``      | Bucket name (required) |
+| `S3_UPLOADS_PREFIX`              | ``      | Folder inside the bucket, e.g. `sites/blog` |
+| `S3_UPLOADS_ACCESS_KEY_ID`       | ``      | Access key (`_FILE` supported). Empty = env/IAM credentials |
+| `S3_UPLOADS_SECRET_ACCESS_KEY`   | ``      | Secret key (`_FILE` supported) |
+| `S3_UPLOADS_ACL`                 | ``      | Canned ACL for new objects, e.g. `public-read` |
+| `S3_UPLOADS_VFS_CACHE_MODE`      | `full`  | `writes` or `full` (`off`/`minimal` break image editing) |
+| `S3_UPLOADS_VFS_CACHE_MAX_SIZE`  | `5G`    | Max local cache size |
+| `S3_UPLOADS_VFS_CACHE_MAX_AGE`   | `24h`   | Evict cached files not accessed for this long |
+| `S3_UPLOADS_DIR_CACHE_TIME`      | `1m`    | Directory listing cache (fewer LIST requests) |
+| `S3_UPLOADS_ATTR_TIMEOUT`        | `10s`   | Kernel attribute cache (fewer HEAD/stat requests) |
+| `S3_UPLOADS_EXTRA_ARGS`          | ``      | Extra `rclone mount` flags, e.g. `--vfs-read-ahead 16M` |
+
+Notes:
+
+- Credentials never written to disk and never forwarded to PHP.
+- PHP-FPM and cron start only after the mount is ready. The container healthcheck also checks the mount.
+- Startup fails if `UPLOADS_PATH` or `wp-content/uploads` already has files (they would be hidden under the mount). Migrate first with `rclone copy ./presshost/uploads remote:bucket`.
+- Requests are already reduced by the VFS cache (one GET per file while cached), `--use-server-modtime`, `--vfs-fast-fingerprint` and `no_check_bucket`/`no_head`. For high traffic, serve media through a CDN in front of the site or the bucket, so most requests never reach the mount.
+- Each replica has its own VFS cache. Keep `S3_UPLOADS_DIR_CACHE_TIME` short when several containers write to the same bucket.
 
 ### OPcache JIT
 

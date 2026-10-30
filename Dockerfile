@@ -17,6 +17,7 @@ ARG COMPOSER_VERSION=2.10.1
 ARG WPCLI_VERSION=2.12.0
 ARG S6_OVERLAY_VERSION=3.2.3.0
 ARG SUPERCRONIC_VERSION=0.2.46
+ARG RCLONE_VERSION=1.75.2
 
 ENV TZ=UTC \
     LANG=C.UTF-8 \
@@ -139,6 +140,13 @@ ENV TZ=UTC \
     VALKEY_MAXMEMORY_POLICY=allkeys-lru \
     VALKEY_SAVE="" \
     VALKEY_PASSWORD="" \
+    S3_UPLOADS_ENABLED=false \
+    S3_UPLOADS_PROVIDER=AWS \
+    S3_UPLOADS_VFS_CACHE_MODE=full \
+    S3_UPLOADS_VFS_CACHE_MAX_SIZE=1G \
+    S3_UPLOADS_VFS_CACHE_MAX_AGE=24h \
+    S3_UPLOADS_DIR_CACHE_TIME=1m \
+    S3_UPLOADS_ATTR_TIMEOUT=10s \
     LOG_MAX_SIZE=10M \
     LOG_MAX_AGE=7 \
     FIX_OWNERSHIP=true \
@@ -151,8 +159,8 @@ ENV TZ=UTC \
 
 RUN set -eux; \
     case "${TARGETARCH}" in \
-        amd64) S6_ARCH="x86_64"; SUPERCRONIC_ARCH="amd64" ;; \
-        arm64) S6_ARCH="aarch64"; SUPERCRONIC_ARCH="arm64" ;; \
+        amd64) S6_ARCH="x86_64"; SUPERCRONIC_ARCH="amd64"; RCLONE_ARCH="amd64" ;; \
+        arm64) S6_ARCH="aarch64"; SUPERCRONIC_ARCH="arm64"; RCLONE_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
@@ -173,6 +181,7 @@ RUN set -eux; \
         libfcgi-bin \
         lsb-release \
         gnupg \
+        fuse3 \
         xz-utils; \
     curl -fsSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg; \
     echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list; \
@@ -213,6 +222,11 @@ RUN set -eux; \
     curl -fsSL "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${SUPERCRONIC_ARCH}" \
         -o /usr/local/bin/supercronic; \
     chmod +x /usr/local/bin/supercronic; \
+    curl -fsSL "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${RCLONE_ARCH}.zip" \
+        -o /tmp/rclone.zip; \
+    unzip -j -q /tmp/rclone.zip "rclone-v${RCLONE_VERSION}-linux-${RCLONE_ARCH}/rclone" -d /usr/local/bin; \
+    chmod +x /usr/local/bin/rclone; \
+    rm -f /tmp/rclone.zip; \
     curl -fsSL -o /usr/local/bin/composer https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar; \
     chmod +x /usr/local/bin/composer; \
     curl -fsSL -o /usr/local/bin/wp-cli.phar https://github.com/wp-cli/wp-cli/releases/download/v${WPCLI_VERSION}/wp-cli-${WPCLI_VERSION}.phar; \
@@ -242,6 +256,8 @@ COPY rootfs/etc/s6-overlay/ /etc/s6-overlay/
 RUN set -eux; \
     chmod +x /etc/s6-overlay/scripts/* \
     && find /etc/s6-overlay/s6-rc.d -name "run" -exec chmod +x {} \; \
+    && find /etc/s6-overlay/s6-rc.d -name "finish" -exec chmod +x {} \; \
+    && find /etc/s6-overlay/s6-rc.d -name "check" -exec chmod +x {} \; \
     && find /etc/s6-overlay/s6-rc.d -name "up" -exec chmod +x {} \;
 
 # Copy NGINX files

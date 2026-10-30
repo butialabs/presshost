@@ -163,6 +163,15 @@ set_default VALKEY_MAXMEMORY_POLICY allkeys-lru
 set_default VALKEY_SAVE ""
 set_default VALKEY_PASSWORD ""
 
+set_default S3_UPLOADS_ENABLED false
+set_default S3_UPLOADS_PROVIDER AWS
+set_default S3_UPLOADS_BUCKET ""
+set_default S3_UPLOADS_VFS_CACHE_MODE full
+set_default S3_UPLOADS_VFS_CACHE_MAX_SIZE 5G
+set_default S3_UPLOADS_VFS_CACHE_MAX_AGE 24h
+set_default S3_UPLOADS_DIR_CACHE_TIME 1m
+set_default S3_UPLOADS_ATTR_TIMEOUT 10s
+
 validate_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 validate_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 )); }
 validate_size() { [[ "$1" =~ ^[0-9]+([kKmMgG][bB]?)?$ ]]; }
@@ -184,6 +193,28 @@ fi
 if [[ -n "${VALKEY_PASSWORD:-}" && "$VALKEY_PASSWORD" == *[[:cntrl:]]* ]]; then
     error "VALKEY_PASSWORD must not contain control characters (newline, tab, CR)"
     exit 1
+fi
+
+if [[ "$S3_UPLOADS_ENABLED" == "true" ]]; then
+    [[ -n "$S3_UPLOADS_BUCKET" ]] || { error "S3_UPLOADS_BUCKET is required when S3_UPLOADS_ENABLED=true"; exit 1; }
+    if [[ ! -c /dev/fuse ]]; then
+        error "S3_UPLOADS_ENABLED=true requires FUSE: run the container with --device /dev/fuse --cap-add SYS_ADMIN (and --security-opt apparmor:unconfined on AppArmor hosts)"
+        exit 1
+    fi
+    [[ "$S3_UPLOADS_VFS_CACHE_MODE" =~ ^(off|minimal|writes|full)$ ]] \
+        || { error "Invalid S3_UPLOADS_VFS_CACHE_MODE: $S3_UPLOADS_VFS_CACHE_MODE (off|minimal|writes|full)"; exit 1; }
+    if [[ "$S3_UPLOADS_VFS_CACHE_MODE" =~ ^(off|minimal)$ ]]; then
+        warning "S3_UPLOADS_VFS_CACHE_MODE=${S3_UPLOADS_VFS_CACHE_MODE} breaks WordPress image editing; use writes or full"
+    fi
+    if [[ -n "${S3_UPLOADS_ACCESS_KEY_ID:-}" && -z "${S3_UPLOADS_SECRET_ACCESS_KEY:-}" ]]; then
+        error "S3_UPLOADS_SECRET_ACCESS_KEY is required when S3_UPLOADS_ACCESS_KEY_ID is set"
+        exit 1
+    fi
+    [[ -z "${S3_UPLOADS_ACCESS_KEY_ID:-}" ]] && info "No S3_UPLOADS_ACCESS_KEY_ID set, rclone will use env/IAM credentials"
+    if [[ -n "$(ls -A "${UPLOADS_PATH}" 2>/dev/null)" && "${S3_UPLOADS_EXTRA_ARGS:-}" != *--allow-non-empty* ]]; then
+        error "${UPLOADS_PATH} is not empty and would be hidden by the S3 mount. Copy it to the bucket (rclone copy) and remove the local uploads volume, or add --allow-non-empty to S3_UPLOADS_EXTRA_ARGS"
+        exit 1
+    fi
 fi
 
 case "${LOG_LEVEL^^}" in
@@ -741,6 +772,10 @@ fi
 if [[ -d "${APP_PATH}/wp-content" ]]; then
     if [[ -d "${APP_PATH}/wp-content/uploads" ]] && [[ ! -L "${APP_PATH}/wp-content/uploads" ]]; then
         mkdir -p "${UPLOADS_PATH}"
+        if [[ "$S3_UPLOADS_ENABLED" == "true" && -n "$(ls -A "${APP_PATH}/wp-content/uploads" 2>/dev/null)" ]]; then
+            error "${APP_PATH}/wp-content/uploads has files that would be hidden by the S3 mount. Copy them to the bucket (rclone copy) and remove the directory"
+            exit 1
+        fi
         if [[ -n "$(ls -A "${APP_PATH}/wp-content/uploads" 2>/dev/null)" ]]; then
             cp -a "${APP_PATH}/wp-content/uploads/." "${UPLOADS_PATH}/"
         fi
@@ -758,7 +793,9 @@ fi
 # Ownership remediation
 if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then
     _chown_paths=("${APP_PATH}" "${CACHE_PATH}" "${LOGS_PATH}")
-    if [[ "${FIX_UPLOADS_OWNERSHIP:-false}" == "true" ]]; then
+    if [[ "$S3_UPLOADS_ENABLED" == "true" ]]; then
+        info "Skipping ownership fix on ${UPLOADS_PATH} (S3 mount, ownership set by rclone --uid/--gid)"
+    elif [[ "${FIX_UPLOADS_OWNERSHIP:-false}" == "true" ]]; then
         _chown_paths+=("${UPLOADS_PATH}")
     else
         info "Skipping ownership fix on ${UPLOADS_PATH}"

@@ -700,6 +700,10 @@ fix_perms() {
             info "Skipping ${p} (not a directory)"
             continue
         fi
+        if grep -qs " ${p} fuse.rclone " /proc/mounts; then
+            info "Skipping ${p} (S3 mount, ownership set by rclone)"
+            continue
+        fi
         info "Processing ${p}..."
         if ! safe-chown "$p"; then
             error "chown failed on ${p}"
