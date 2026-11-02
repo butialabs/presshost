@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+# No-op when the S3 uploads mount is disabled
+if [[ "${S3_UPLOADS_ENABLED:-false}" != "true" ]]; then
+    exit 0
+fi
+
+UPLOADS_PATH="${UPLOADS_PATH:-/site/uploads}"
+
+if ! pgrep -x "rclone" > /dev/null; then
+    echo "[ERROR] $(date -Iseconds) - rclone is not running"
+    exit 1
+fi
+
+if ! grep -qs " ${UPLOADS_PATH} fuse.rclone " /proc/mounts; then
+    echo "[ERROR] $(date -Iseconds) - ${UPLOADS_PATH} is not mounted"
+    exit 1
+fi
+
+if ! timeout 5 stat "$UPLOADS_PATH" > /dev/null 2>&1; then
+    echo "[ERROR] $(date -Iseconds) - ${UPLOADS_PATH} mount is not responding"
+    exit 1
+fi
+
+echo "[INFO] $(date -Iseconds) - rclone uploads mount is healthy"

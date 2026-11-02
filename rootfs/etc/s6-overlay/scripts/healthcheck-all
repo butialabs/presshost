@@ -4,6 +4,7 @@ set -uo pipefail
 # Composite healthcheck used by HEALTHCHECK in Dockerfile.
 # Validates that NGINX answers AND PHP-FPM ping responds.
 # Valkey is only checked when VALKEY_ENABLED=true.
+# The rclone uploads mount is only checked when S3_UPLOADS_ENABLED=true.
 
 check() {
     local name="$1" out
@@ -18,5 +19,6 @@ check() {
 check nginx   || exit 1
 check php-fpm || exit 1
 check valkey  || exit 1
+check rclone  || exit 1
 
 exit 0

@@ -1,0 +1,2 @@
+#!/bin/bash
+grep -qs " ${UPLOADS_PATH:-/site/uploads} fuse.rclone " /proc/mounts

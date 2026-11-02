@@ -1,0 +1,71 @@
+#!/command/with-contenv bash
+if [[ "${S3_UPLOADS_ENABLED:-false}" != "true" ]]; then
+    echo >&3
+    s6-svc -d .
+    exit 0
+fi
+
+UPLOADS_PATH="${UPLOADS_PATH:-/site/uploads}"
+CACHE_PATH="${CACHE_PATH:-/site/cache}"
+
+for _var in S3_UPLOADS_ACCESS_KEY_ID S3_UPLOADS_SECRET_ACCESS_KEY; do
+    _file_var="${_var}_FILE"
+    if [[ -z "${!_var:-}" && -n "${!_file_var:-}" && -r "${!_file_var}" ]]; then
+        _value="$(<"${!_file_var}")"
+        export "${_var}=${_value%$'\r'}"
+    fi
+done
+unset _var _file_var _value
+
+export RCLONE_CONFIG_S3UP_TYPE=s3
+export RCLONE_CONFIG_S3UP_PROVIDER="${S3_UPLOADS_PROVIDER:-AWS}"
+export RCLONE_CONFIG_S3UP_NO_CHECK_BUCKET=true
+export RCLONE_CONFIG_S3UP_NO_HEAD=true
+if [[ -n "${S3_UPLOADS_ACCESS_KEY_ID:-}" ]]; then
+    export RCLONE_CONFIG_S3UP_ENV_AUTH=false
+    export RCLONE_CONFIG_S3UP_ACCESS_KEY_ID="${S3_UPLOADS_ACCESS_KEY_ID}"
+    export RCLONE_CONFIG_S3UP_SECRET_ACCESS_KEY="${S3_UPLOADS_SECRET_ACCESS_KEY:-}"
+else
+    export RCLONE_CONFIG_S3UP_ENV_AUTH=true
+fi
+[[ -n "${S3_UPLOADS_REGION:-}" ]]   && export RCLONE_CONFIG_S3UP_REGION="${S3_UPLOADS_REGION}"
+[[ -n "${S3_UPLOADS_ENDPOINT:-}" ]] && export RCLONE_CONFIG_S3UP_ENDPOINT="${S3_UPLOADS_ENDPOINT}"
+[[ -n "${S3_UPLOADS_ACL:-}" ]]      && export RCLONE_CONFIG_S3UP_ACL="${S3_UPLOADS_ACL}"
+unset S3_UPLOADS_ACCESS_KEY_ID S3_UPLOADS_SECRET_ACCESS_KEY
+
+_remote="s3up:${S3_UPLOADS_BUCKET}"
+_prefix="${S3_UPLOADS_PREFIX:-}"
+_prefix="${_prefix#/}"
+_prefix="${_prefix%/}"
+[[ -n "$_prefix" ]] && _remote+="/${_prefix}"
+
+case "${LOG_LEVEL:-WARN}" in
+    [Ee][Rr][Rr][Oo][Rr]) _log_level=ERROR ;;
+    [Ii][Nn][Ff][Oo])     _log_level=INFO ;;
+    [Dd][Ee][Bb][Uu][Gg]|[Tt][Rr][Aa][Cc][Ee]) _log_level=DEBUG ;;
+    *)                    _log_level=NOTICE ;;
+esac
+
+if grep -qs " ${UPLOADS_PATH} fuse.rclone " /proc/mounts; then
+    fusermount3 -uz "$UPLOADS_PATH" 2>/dev/null || true
+fi
+
+mkdir -p "$UPLOADS_PATH" "${CACHE_PATH}/rclone"
+
+exec s6-notifyoncheck -d -n 0 -s 500 -w 1000 -t 5000 \
+    rclone mount "$_remote" "$UPLOADS_PATH" \
+        --config /dev/null \
+        --log-level "$_log_level" \
+        --allow-other \
+        --uid "$(id -u "${APP_USER:-www-data}")" \
+        --gid "$(getent group "${APP_GROUP:-www-data}" | cut -d: -f3)" \
+        --umask 002 \
+        --cache-dir "${CACHE_PATH}/rclone" \
+        --vfs-cache-mode "${S3_UPLOADS_VFS_CACHE_MODE:-full}" \
+        --vfs-cache-max-size "${S3_UPLOADS_VFS_CACHE_MAX_SIZE:-5G}" \
+        --vfs-cache-max-age "${S3_UPLOADS_VFS_CACHE_MAX_AGE:-24h}" \
+        --vfs-fast-fingerprint \
+        --dir-cache-time "${S3_UPLOADS_DIR_CACHE_TIME:-1m}" \
+        --attr-timeout "${S3_UPLOADS_ATTR_TIMEOUT:-10s}" \
+        --use-server-modtime \
+        ${S3_UPLOADS_EXTRA_ARGS:-}

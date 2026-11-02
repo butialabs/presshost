@@ -11,6 +11,19 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-p@ssw0rd}
       DB_HOST: ${DB_HOST:-db}
       TZ: ${TZ:-UTC}
+      # S3 uploads (see README "S3 Uploads"): also uncomment devices/cap_add/security_opt and remove the uploads volume below
+      # S3_UPLOADS_ENABLED: "true"
+      # S3_UPLOADS_PROVIDER: AWS
+      # S3_UPLOADS_REGION: us-east-1
+      # S3_UPLOADS_BUCKET: my-site-media
+      # S3_UPLOADS_ACCESS_KEY_ID: ${S3_UPLOADS_ACCESS_KEY_ID}
+      # S3_UPLOADS_SECRET_ACCESS_KEY: ${S3_UPLOADS_SECRET_ACCESS_KEY}
+    # devices:
+    #   - /dev/fuse
+    # cap_add:
+    #   - SYS_ADMIN
+    # security_opt:
+    #   - apparmor:unconfined
     volumes:
       - ./presshost/press:/site/press
       - ./presshost/uploads:/site/uploads

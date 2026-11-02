@@ -1,0 +1,6 @@
+#!/command/with-contenv bash
+UPLOADS_PATH="${UPLOADS_PATH:-/site/uploads}"
+if grep -qs " ${UPLOADS_PATH} fuse.rclone " /proc/mounts; then
+    fusermount3 -uz "$UPLOADS_PATH" 2>/dev/null || true
+fi
+exit 0
