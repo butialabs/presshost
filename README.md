@@ -17,7 +17,6 @@
 - 🗄️ Optional local Redis/Valkey server
 - 🔐 Docker secrets (`*_FILE`) supported everywhere, including PHP-FPM requests.
 - 📦 Separate code, uploads, cache, and logs!
-- 🔧 Interactive installer, start the container, run `docker exec -it presshost ./presshost` and perform the guided installation.
 
 ## 🚀
 
@@ -62,6 +61,21 @@ docker compose up -d
 > If it's a migration, you can skip the installation and just copy the files to the correct volumes.
 
 > Upon startup, an index.php file would be displayed automatically if none already exists.
+
+For a fresh install, use WP-CLI inside the container (the `wp` wrapper already runs as `www-data`, and `wp-secrets.php` is generated at startup unless salts are provided via environment variables):
+
+```bash
+docker exec presshost rm -f /site/press/index.php
+docker exec presshost wp core download
+# ClassicPress: docker exec presshost wp core download https://www.classicpress.net/latest.zip
+docker exec presshost cp /tmp/wp-config.php /site/press/wp-config.php
+docker exec presshost wp core install \
+    --url=https://example.com \
+    --title="My Site" \
+    --admin_user=admin \
+    --admin_email=admin@example.com \
+    --skip-email
+```
 
 ## Breaking changes on v3+
 
@@ -337,15 +351,6 @@ All logs are written under `/site/logs` and rotated daily by `logrotate`: `nginx
 | `LOG_MAX_SIZE` | `10M`   | Logrotate max size per log file (rotates daily or when exceeded)                                             |
 | `LOG_MAX_AGE`  | `7`     | Number of rotated copies to keep (7 days)                                                                    |
 
-### Installation
-
-These variables are used during the interactive installation process via `presshost` command:
-
-| Variable                       | Default  | Description                              |
-| ------------------------------ | -------- | ---------------------------------------- |
-| `INSTALL_WORDPRESS_VERSION`    | `latest` | Specific WordPress version to install    |
-| `INSTALL_CLASSICPRESS_VERSION` | `latest` | Specific ClassicPress version to install |
-
 ### Anti-flood / DDoS hardening
 
 PressHost ships with built-in protections that keep PHP/NGINX healthy under load:
@@ -373,7 +378,6 @@ PHP-FPM runs with `clear_env=yes`. The init script forwards environment variable
 | `WP_*` | `WP_DEBUG`, `WP_REDIS_HOST`, `WP_ROCKET_*`, `WP_AI_SUPPORT`, … |
 | `SMTP_*` | `SMTP_HOST`, `SMTP_USER`, … |
 | `PRESS_*` | custom constants (see below) |
-| `INSTALL_*` | installer variables |
 | First-party list | salts (`AUTH_KEY`…`NONCE_SALT`), `SITEURL`, `TZ`, `LOGS_PATH`, `UPLOADS_PATH`, `CACHE_PATH`, `APP_PATH`, `WPLANG`, `FS_METHOD`, `FORCE_SSL_*`, `AUTOSAVE_INTERVAL`, `MEDIA_TRASH`, `DISABLE_NAG_NOTICES`, `DISABLE_WP_CRON`, `DISALLOW_FILE_*`, `AUTOMATIC_UPDATER_DISABLED`, `SAVEQUERIES` |
 
 **Not forwarded** (never visible to PHP / `phpinfo()`): `NGINX_*`, `PHP_*`, `VALKEY_*`, `HOME`, `PATH`, and any unrelated container env vars.
@@ -538,47 +542,19 @@ environment:
 
 ### CLI and Tips:
 
-#### Installer
-
-The container ships with the `presshost` CLI. Launch it with:
-
-```bash
-docker exec -it presshost presshost
-```
-
-When **no WordPress/ClassicPress** is installed yet, the menu lets you:
-
-1. **Install WordPress**: downloads `wordpress.org/latest.zip` (or a specific version), unpacks it to `/site/press`, generates `wp-config.php` and `wp-secrets.php` (locally generated salts, no external API), runs `wp core install`, and resets ownership of the install directory to `www-data:www-data`.
-2. **Install ClassicPress**: same flow, pulling from the official ClassicPress release archive.
-
-When a site is **already installed**, the menu offers:
-
-1. **View installation info**: shows detected type (WordPress/ClassicPress), version, site URL, title and the configured directories (`/site/press`, `/site/uploads`, `/site/cache`).
-2. **Exit**.
-
-You can also invoke the installer non-interactively:
-
-```bash
-# Same flows scripted via env vars (no TTY required)
-docker exec -e PRESSHOST_DEFAULT_ACTION=wordpress \
-            -e INSTALL_URL=https://example.com \
-            -e INSTALL_EMAIL=admin@example.com \
-            -it presshost presshost
-```
-
 #### Fix permissions
 
-`presshost fix-perms` resets ownership to `www-data:www-data` and applies safe permissions (`755` for directories, `644` for files, `640` for `wp-config.php` and `wp-secrets.php`) on `/site/{press,uploads,cache,logs}`. It must be invoked with the root account inside the container:
+`fix-perms` resets ownership to `www-data:www-data` and applies safe permissions (`755` for directories, `644` for files, `640` for `wp-config.php` and `wp-secrets.php`) on `/site/{press,uploads,cache,logs}`. It must be invoked with the root account inside the container:
 
 ```bash
-docker exec -u 0 presshost presshost fix-perms
+docker exec -u 0 presshost fix-perms
 ```
 
 #### safe-chown
 
 `safe-chown <path> [path...]` fixes ownership to `APP_USER:APP_GROUP` efficiently: healthy trees are an instant no-op (top-level probe), and dirty trees are walked chowning **only** wrong-owned entries in batches. 
 
-It runs automatically at startup when `FIX_OWNERSHIP=true`, in the background (`APP_PATH`, `CACHE_PATH`, `LOGS_PATH` by default; add `UPLOADS_PATH` with `FIX_UPLOADS_OWNERSHIP=true`), and is also used by `presshost fix-perms` (which always covers all four paths, run synchronously on demand). Manual use:
+It runs automatically at startup when `FIX_OWNERSHIP=true`, in the background (`APP_PATH`, `CACHE_PATH`, `LOGS_PATH` by default; add `UPLOADS_PATH` with `FIX_UPLOADS_OWNERSHIP=true`), and is also used by `fix-perms` (which always covers all four paths, run synchronously on demand). Manual use:
 
 ```bash
 docker exec presshost safe-chown /site/press /site/uploads

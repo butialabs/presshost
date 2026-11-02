@@ -1,0 +1,76 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_NAME="FIX-PERMS"
+source "/usr/local/bin/common-utils.sh"
+
+fix_perms() {
+    local target_user="${APP_USER:-www-data}"
+    local target_group="${APP_GROUP:-www-data}"
+
+    info "Repairing ownership and permissions on PressHost volumes"
+    info "Target: ${target_user}:${target_group}"
+
+    if [[ "$(id -u)" != "0" ]]; then
+        error "fix-perms must be executed as root"
+        error "Re-run with: docker exec -u 0 <container> fix-perms"
+        return 1
+    fi
+
+    local paths=(
+        "${APP_PATH:-/site/press}"
+        "${UPLOADS_PATH:-/site/uploads}"
+        "${CACHE_PATH:-/site/cache}"
+        "${LOGS_PATH:-/site/logs}"
+    )
+
+    local rc=0
+    for p in "${paths[@]}"; do
+        if [[ ! -d "$p" ]]; then
+            info "Skipping ${p} (not a directory)"
+            continue
+        fi
+        info "Processing ${p}..."
+        if ! safe-chown "$p"; then
+            error "chown failed on ${p}"
+            rc=1
+        fi
+        find "$p" -type d -exec chmod 755 {} + 2>/dev/null || true
+        find "$p" -type f -exec chmod 644 {} + 2>/dev/null || true
+    done
+
+    # Sensitive files: tighter perms.
+    local press_dir="${APP_PATH:-/site/press}"
+    for sensitive in "${press_dir}/wp-config.php" "${press_dir}/wp-secrets.php"; do
+        if [[ -f "$sensitive" ]]; then
+            chmod 640 "$sensitive" 2>/dev/null || true
+            info "Locked down ${sensitive} (640)"
+        fi
+    done
+
+    local logs_dir="${LOGS_PATH:-/site/logs}"
+    if [[ -d "$logs_dir" ]]; then
+        chmod 750 "$logs_dir" 2>/dev/null || true
+        find "$logs_dir" -type f -exec chmod 640 {} + 2>/dev/null || true
+        info "Locked down ${logs_dir} (dir 750, files 640)"
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        success "Permission fix complete"
+    else
+        error "Permission fix completed with errors"
+    fi
+    return $rc
+}
+
+case "${1:-}" in
+    -h|--help|help)
+        cat <<'USAGE'
+Usage: fix-perms    Reset owner+permissions on /site/{press,uploads,cache,logs}
+                    (must run as root: docker exec -u 0 <container> fix-perms)
+USAGE
+        exit 0
+        ;;
+esac
+
+fix_perms

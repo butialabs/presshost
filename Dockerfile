@@ -167,7 +167,6 @@ RUN set -eux; \
         mariadb-client \
         procps \
         nano \
-        whiptail \
         gettext-base \
         openssl \
         libfcgi-bin \
