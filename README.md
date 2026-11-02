@@ -58,8 +58,6 @@ docker compose up -d
 
 ## Installation
 
-> If it's a migration, you can skip the installation and just copy the files to the correct volumes.
-
 > Upon startup, an index.php file would be displayed automatically if none already exists.
 
 For a fresh install, use WP-CLI inside the container (the `wp` wrapper already runs as `www-data`, and `wp-secrets.php` is generated at startup unless salts are provided via environment variables):
@@ -76,20 +74,6 @@ docker exec presshost wp core install \
     --admin_email=admin@example.com \
     --skip-email
 ```
-
-## Breaking changes on v3+
-
-If you are upgrading from a previous version, review these changes:
-
-| Change | Impact |
-| ------ | ------ |
-| `PHP_APC_*` renamed to `PHP_APCU_*` | Update your env vars (`PHP_APC_ENABLED` -> `PHP_APCU_ENABLED`, etc.) |
-| HSTS no longer sends `preload` by default | Set `NGINX_HSTS_PRELOAD=true` to restore the old header |
-| Spam-keyword blocking is now opt-in | Set `NGINX_BLOCK_SPAM=true` to restore the old behavior |
-| Mobile-split cache removed | `NGINX_CACHE_SPLIT_MOBILE` no longer exists; cache key is unified |
-| Timeout chain aligned | `PHP_FPM_REQUEST_TERMINATE_TIMEOUT` 60->130, `NGINX_FASTCGI_READ_TIMEOUT` 300s->180s |
-| `disable_functions` no longer applies to PHP-CLI | Use `PHP_CLI_DISABLE_FUNCTIONS` if you want CLI restrictions |
-| `open_basedir` no longer includes `/proc/` | PHP code can no longer read `/proc` (security hardening) |
 
 ## All Environments
 
