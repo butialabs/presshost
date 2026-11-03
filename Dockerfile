@@ -171,6 +171,7 @@ RUN set -eux; \
         ca-certificates \
         curl \
         unzip \
+        zip \
         logrotate \
         mariadb-client \
         procps \
