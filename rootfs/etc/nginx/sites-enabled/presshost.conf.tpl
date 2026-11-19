@@ -4,7 +4,7 @@ server {
     listen [::]:${NGINX_HTTPS_PORT} ssl default_server reuseport;
     ${NGINX_HTTP3_LISTEN}
 
-    http2 on;
+    http2 ${NGINX_HTTP2_STATE};
     server_name ${NGINX_SERVER_NAME};
 
     set $base /site;

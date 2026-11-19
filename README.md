@@ -254,7 +254,7 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 | `NGINX_WORKER_PROCESSES`            | `auto`   | Worker processes                                  |
 | `NGINX_WORKER_CONNECTIONS`          | `65535`  | Connections per worker                            |
 | `NGINX_WORKER_RLIMIT_NOFILE`        | `65535`  | Max open files per worker                         |
-| `NGINX_RESOLVER`                    | `127.0.0.11 valid=30s` | DNS resolver for OCSP stapling (empty disables; `127.0.0.11` is Docker's embedded DNS) |
+| `NGINX_RESOLVER`                    | empty    | DNS resolver for OCSP stapling (empty disables; use `127.0.0.11 valid=30s` for Docker's embedded DNS). Temporarily empty by default, see the security note below |
 | `NGINX_CACHE`                       | `false`  | Enable NGINX FastCGI cache. When set to false, no cache directories or files are created |
 | `NGINX_CACHE_MAX_SIZE`              | `512m`   | Cache max size                                    |
 | `NGINX_CACHE_INACTIVE`              | `60m`    | Cache inactive time                               |
@@ -263,13 +263,17 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 | `NGINX_CACHE_KEY_ZONE_SIZE`         | `100m`   | Shared memory zone size for cache keys (~8k keys/MB) |
 | `NGINX_GZIP_COMP_LEVEL`             | `6`      | gzip compression level (1-9)                      |
 | `NGINX_BROTLI_COMP_LEVEL`           | `4`      | brotli compression level (0-11) for dynamic content |
-| `NGINX_HTTP3`                       | `false`  | Enable HTTP/3 (QUIC) on port 443/udp              |
+| `NGINX_HTTP2`                       | `false`  | Enable HTTP/2. Temporarily `false` by default, see the security note below |
+| `NGINX_HTTP3`                       | `false`  | Enable HTTP/3 (QUIC) on port 443/udp (adds `TLSv1.3` to `NGINX_SSL_PROTOCOLS` automatically) |
+| `NGINX_SSL_PROTOCOLS`               | `TLSv1.2` | Value of `ssl_protocols`. Temporarily without `TLSv1.3` by default, see the security note below |
 | `NGINX_SERVER_NAME`                 | derived from `SITEURL` | Override `server_name` directive    |
 | `NGINX_HSTS`                        | `true`   | Emit `Strict-Transport-Security` header           |
 | `NGINX_HSTS_MAX_AGE`                | `31536000` | HSTS max-age (seconds)                          |
 | `NGINX_HSTS_SUBDOMAINS`             | `true`   | Add `includeSubDomains` to HSTS                   |
 | `NGINX_HSTS_PRELOAD`                | `false`  | Add `preload` to HSTS (only enable if you understand the commitment, see hstspreload.org) |
 | `NGINX_BLOCK_SPAM`                  | `false`  | Block pharma/spam keywords in query strings (may cause false positives on legitimate searches) |
+
+> **Temporary security defaults (2026-11-19):** nginx 1.26.3 in Debian trixie is affected by CVE-2026-123007, CVE-2026-123633 (HTTP/2), CVE-2026-118899 (TLS 1.3 request body) and CVE-2026-123634 (resolver), fixed upstream in 1.31.9/1.30.7. Until Debian ships a patched package, `NGINX_HTTP2=false`, `NGINX_SSL_PROTOCOLS=TLSv1.2` and an empty `NGINX_RESOLVER` are the defaults. Set `NGINX_HTTP2=true` and `NGINX_SSL_PROTOCOLS="TLSv1.2 TLSv1.3"` to opt back in at your own risk.
 
 ### SSL
 
