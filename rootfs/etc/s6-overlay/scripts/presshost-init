@@ -55,13 +55,9 @@ set_default NGINX_PATH_PREFIX ""
 set_default NGINX_WORKER_PROCESSES auto
 set_default NGINX_WORKER_CONNECTIONS 65535
 set_default NGINX_WORKER_RLIMIT_NOFILE 65535
-# TEMPORARY (2026-11-19): resolver, HTTP/2 and TLS 1.3 are off by default to mitigate nginx CVEs fixed in
-# 1.31.9/1.30.7 (CVE-2026-123007, CVE-2026-123633, CVE-2026-118899, CVE-2026-123634) until Debian ships a
-# patched 1.26.3. Afterwards restore: NGINX_RESOLVER "127.0.0.11 valid=30s", NGINX_HTTP2 true,
-# NGINX_SSL_PROTOCOLS "TLSv1.2 TLSv1.3" (here, in the Dockerfile and in the README).
-export NGINX_RESOLVER="${NGINX_RESOLVER-}"
-set_default NGINX_HTTP2 false
-set_default NGINX_SSL_PROTOCOLS "TLSv1.2"
+export NGINX_RESOLVER="${NGINX_RESOLVER-127.0.0.11 valid=30s}"
+set_default NGINX_HTTP2 true
+set_default NGINX_SSL_PROTOCOLS "TLSv1.2 TLSv1.3"
 set_default NGINX_RATE_LIMIT 30r/s
 set_default NGINX_RATE_BURST 60
 set_default NGINX_CONN_LIMIT 50
