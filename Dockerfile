@@ -11,6 +11,7 @@ LABEL maintainer="Butiá Labs <mecairam@butialabs.com>" \
     org.opencontainers.image.licenses="MIT"
 
 ARG PHP_VERSION=8.4
+ARG PHP_PACKAGE_VERSION=8.4.28-2+0~deb.sury.org.1+debian13
 ARG NGINX_VERSION=1.26.3-3+deb13u10
 ARG VALKEY_VERSION=8.1.1+dfsg1-3+deb13u2
 ARG COMPOSER_VERSION=2.10.1
@@ -23,6 +24,7 @@ ENV TZ=UTC \
     LC_ALL=C.UTF-8 \
     LOG_LEVEL=WARN \
     PHP_VERSION=${PHP_VERSION} \
+    PHP_PACKAGE_VERSION=${PHP_PACKAGE_VERSION} \
     NGINX_VERSION=${NGINX_VERSION} \
     VALKEY_VERSION=${VALKEY_VERSION} \
     APP_PATH=/site/press \
@@ -111,8 +113,10 @@ ENV TZ=UTC \
     NGINX_WORKER_PROCESSES=auto \
     NGINX_WORKER_CONNECTIONS=65535 \
     NGINX_WORKER_RLIMIT_NOFILE=65535 \
-    NGINX_RESOLVER="127.0.0.11 valid=30s" \
+    NGINX_RESOLVER="" \
+    NGINX_HTTP2=false \
     NGINX_HTTP3=false \
+    NGINX_SSL_PROTOCOLS="TLSv1.2" \
     NGINX_HSTS=true \
     NGINX_HSTS_MAX_AGE=31536000 \
     NGINX_HSTS_SUBDOMAINS=true \
@@ -178,20 +182,20 @@ RUN set -eux; \
     echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        php${PHP_VERSION}-fpm \
-        php${PHP_VERSION}-cli \
-        php${PHP_VERSION}-common \
-        php${PHP_VERSION}-mysql \
-        php${PHP_VERSION}-curl \
-        php${PHP_VERSION}-gd \
+        php${PHP_VERSION}-fpm=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-cli=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-common=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-mysql=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-curl=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-gd=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-imagick \
-        php${PHP_VERSION}-intl \
-        php${PHP_VERSION}-mbstring \
-        php${PHP_VERSION}-xml \
-        php${PHP_VERSION}-zip \
-        php${PHP_VERSION}-bcmath \
+        php${PHP_VERSION}-intl=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-mbstring=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-xml=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-zip=${PHP_PACKAGE_VERSION} \
+        php${PHP_VERSION}-bcmath=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-exif \
-        php${PHP_VERSION}-opcache \
+        php${PHP_VERSION}-opcache=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-apcu \
         php${PHP_VERSION}-redis \
         php${PHP_VERSION}-memcached \
