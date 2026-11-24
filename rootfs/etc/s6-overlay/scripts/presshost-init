@@ -120,6 +120,7 @@ set_default PHP_DEFAULT_SOCKET_TIMEOUT 60
 set_default PHP_OUTPUT_BUFFERING 4096
 set_default PHP_PM auto
 set_default PHP_PM_MAX_CHILDREN auto
+set_default PHP_PM_MAX_CHILDREN_CAP 100
 set_default PHP_PM_START_SERVERS 10
 set_default PHP_PM_MIN_SPARE_SERVERS 10
 set_default PHP_PM_MAX_SPARE_SERVERS 35
@@ -175,6 +176,7 @@ validate_port "$VALKEY_PORT"            || { error "Invalid VALKEY_PORT: $VALKEY
 validate_size "${PHP_MEMORY_LIMIT:-512M}"      || { error "Invalid PHP_MEMORY_LIMIT: $PHP_MEMORY_LIMIT"; exit 1; }
 validate_size "$NGINX_CACHE_MAX_SIZE"   || { error "Invalid NGINX_CACHE_MAX_SIZE: $NGINX_CACHE_MAX_SIZE"; exit 1; }
 validate_positive_int "$PHP_PM_WORKER_MB"      || { error "Invalid PHP_PM_WORKER_MB: $PHP_PM_WORKER_MB"; exit 1; }
+validate_positive_int "$PHP_PM_MAX_CHILDREN_CAP" || { error "Invalid PHP_PM_MAX_CHILDREN_CAP: $PHP_PM_MAX_CHILDREN_CAP"; exit 1; }
 if [[ "${PHP_PM_MAX_CHILDREN:-auto}" != "auto" ]]; then
     validate_positive_int "$PHP_PM_MAX_CHILDREN" || { error "Invalid PHP_PM_MAX_CHILDREN: $PHP_PM_MAX_CHILDREN"; exit 1; }
 fi
@@ -397,8 +399,8 @@ if [[ "${PHP_PM_MAX_CHILDREN:-}" == "auto" ]]; then
     (( usable < worker_mb )) && usable=$worker_mb
     PHP_PM_MAX_CHILDREN=$(( usable / worker_mb ))
     (( PHP_PM_MAX_CHILDREN < 4 )) && PHP_PM_MAX_CHILDREN=4
-    (( PHP_PM_MAX_CHILDREN > 200 )) && PHP_PM_MAX_CHILDREN=200
-    info "Auto-calculated PHP_PM_MAX_CHILDREN=${PHP_PM_MAX_CHILDREN} (worker=${worker_mb}MB, reserve=${reserve_mb}MB)"
+    (( PHP_PM_MAX_CHILDREN > PHP_PM_MAX_CHILDREN_CAP )) && PHP_PM_MAX_CHILDREN=$PHP_PM_MAX_CHILDREN_CAP
+    info "Auto-calculated PHP_PM_MAX_CHILDREN=${PHP_PM_MAX_CHILDREN} (worker=${worker_mb}MB, reserve=${reserve_mb}MB, cap=${PHP_PM_MAX_CHILDREN_CAP})"
 fi
 export PHP_PM_MAX_CHILDREN
 

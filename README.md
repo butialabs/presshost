@@ -197,6 +197,7 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 | `PHP_OUTPUT_BUFFERING`              | `4096`    | Output buffering size                            |
 | `PHP_PM`                            | `auto`    | Process manager type (`auto`, static, dynamic, ondemand). `auto` picks `static` for ≤2GB containers, `dynamic` otherwise. |
 | `PHP_PM_MAX_CHILDREN`               | `auto`    | Max children processes (`auto` sizes from container memory; or set a fixed integer like `50`) |
+| `PHP_PM_MAX_CHILDREN_CAP`           | `100`     | Upper limit applied only when `PHP_PM_MAX_CHILDREN=auto`. Keep the database `max_connections` above this value plus headroom for WP-CLI, cron and backups (MariaDB default is 151) |
 | `PHP_PM_WORKER_MB`                  | `128`     | Assumed average worker size (MB) used by the `auto` calculation |
 | `PHP_PM_START_SERVERS`              | `10`      | Start servers (preforked workers)                |
 | `PHP_PM_MIN_SPARE_SERVERS`          | `10`      | Min spare servers                                |
