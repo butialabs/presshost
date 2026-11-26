@@ -82,6 +82,7 @@ ENV TZ=UTC \
     PHP_REALPATH_CACHE_SIZE=4096K \
     PHP_REALPATH_CACHE_TTL=600 \
     PHP_ERROR_REPORTING="E_ALL & ~E_DEPRECATED & ~E_STRICT" \
+    IMAGE_PROCESSOR=gd \
     IMAGICK_MEMORY_LIMIT=1GiB \
     IMAGICK_MAP_LIMIT=2GiB \
     IMAGICK_DISK_LIMIT=4GiB \
@@ -90,6 +91,7 @@ ENV TZ=UTC \
     IMAGICK_HEIGHT_LIMIT=32KP \
     IMAGICK_THREAD_LIMIT=1 \
     IMAGICK_TIME_LIMIT=120 \
+    VIPS_CONCURRENCY=auto \
     NGINX_CLIENT_MAX_BODY_SIZE=64m \
     NGINX_CACHE=false \
     NGINX_CACHE_MAX_SIZE=512m \
@@ -198,6 +200,11 @@ RUN set -eux; \
         php${PHP_VERSION}-curl=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-gd=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-imagick \
+        libavif16 \
+        libvips42t64 \
+        libheif-plugin-libde265 \
+        libheif-plugin-dav1d \
+        libheif-plugin-aomenc \
         php${PHP_VERSION}-intl=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-mbstring=${PHP_PACKAGE_VERSION} \
         php${PHP_VERSION}-xml=${PHP_PACKAGE_VERSION} \
@@ -233,6 +240,9 @@ RUN set -eux; \
     apt-get purge -y --auto-remove lsb-release gnupg xz-utils; \
     rm -rf /etc/nginx/sites-enabled/* /etc/nginx/sites-available/*; \
     ln -sf /usr/sbin/php-fpm${PHP_VERSION} /usr/sbin/php-fpm; \
+    php -r 'exit(empty(gd_info()["AVIF Support"]) ? 1 : 0);' || { echo "GD built without AVIF support"; exit 1; }; \
+    php -m | grep -qix ffi || { echo "PHP FFI extension missing"; exit 1; }; \
+    phpdismod -v ${PHP_VERSION} -s ALL imagick; \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 RUN set -eux; \
@@ -264,6 +274,12 @@ COPY rootfs/etc/nginx/ /etc/nginx/
 COPY rootfs/etc/presshost/ /etc/presshost/
 
 COPY rootfs/etc/valkey/ /etc/valkey/
+
+COPY rootfs/usr/lib/php/presshost/ /usr/lib/php/presshost/
+RUN set -eux; \
+    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --no-progress \
+        --classmap-authoritative -d /usr/lib/php/presshost/vips; \
+    rm -rf /root/.composer /root/.cache
 
 # Copy PHP files
 COPY rootfs/etc/php/fpm/pool.d/www.conf.tpl /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl

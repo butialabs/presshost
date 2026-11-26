@@ -1,0 +1,17 @@
+{
+    "name": "presshost/vips",
+    "description": "libvips image editor bundled in the PressHost image",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1",
+        "ext-ffi": "*",
+        "jcupitt/vips": "2.6.1",
+        "psr/log": "3.0.2"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "platform-check": false,
+        "sort-packages": true
+    }
+}

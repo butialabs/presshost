@@ -157,6 +157,8 @@ set_default PHP_CLI_DISABLE_FUNCTIONS ""
 set_default PHP_OPCACHE_ENABLE_CLI 0
 set_default PHP_PM_WORKER_MB 128
 
+set_default IMAGE_PROCESSOR gd
+
 set_default IMAGICK_MEMORY_LIMIT 1GiB
 set_default IMAGICK_MAP_LIMIT 2GiB
 set_default IMAGICK_DISK_LIMIT 4GiB
@@ -165,6 +167,8 @@ set_default IMAGICK_WIDTH_LIMIT 32KP
 set_default IMAGICK_HEIGHT_LIMIT 32KP
 set_default IMAGICK_THREAD_LIMIT 1
 set_default IMAGICK_TIME_LIMIT 120
+
+set_default VIPS_CONCURRENCY auto
 
 # Valkey (local object cache server)
 set_default VALKEY_ENABLED false
@@ -180,6 +184,19 @@ validate_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 )); }
 validate_size() { [[ "$1" =~ ^[0-9]+([kKmMgG][bB]?)?$ ]]; }
 validate_magick_size() { [[ "$1" =~ ^[0-9]+([KkMmGgTt]i?[Bb]?|[KkMmGgTt]?[Pp])?$ ]]; }
 
+get_cpu_limit() {
+    local quota period cpus
+    if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+        read -r quota period < /sys/fs/cgroup/cpu.max
+        if [[ "$quota" =~ ^[0-9]+$ && "$period" =~ ^[0-9]+$ ]] && (( period > 0 )); then
+            cpus=$(( (quota + period - 1) / period ))
+        fi
+    fi
+    [[ -z "${cpus:-}" ]] && cpus=$(nproc 2>/dev/null || echo 1)
+    (( cpus < 1 )) && cpus=1
+    echo "$cpus"
+}
+
 validate_port "$NGINX_HTTP_PORT"        || { error "Invalid NGINX_HTTP_PORT: $NGINX_HTTP_PORT"; exit 1; }
 validate_port "$NGINX_HTTPS_PORT"       || { error "Invalid NGINX_HTTPS_PORT: $NGINX_HTTPS_PORT"; exit 1; }
 validate_port "$VALKEY_PORT"            || { error "Invalid VALKEY_PORT: $VALKEY_PORT"; exit 1; }
@@ -194,6 +211,18 @@ validate_positive_int "$IMAGICK_THREAD_LIMIT"  || { error "Invalid IMAGICK_THREA
 validate_positive_int "$IMAGICK_TIME_LIMIT"    || { error "Invalid IMAGICK_TIME_LIMIT: $IMAGICK_TIME_LIMIT"; exit 1; }
 if (( 10#$IMAGICK_THREAD_LIMIT == 1 )); then IMAGICK_SINGLE_THREAD=1; else IMAGICK_SINGLE_THREAD=0; fi
 export IMAGICK_SINGLE_THREAD
+VIPS_CONCURRENCY_SOURCE=""
+if [[ "$VIPS_CONCURRENCY" == "auto" ]]; then
+    VIPS_CONCURRENCY=$(get_cpu_limit)
+    VIPS_CONCURRENCY_SOURCE=" (auto)"
+fi
+validate_positive_int "$VIPS_CONCURRENCY"      || { error "Invalid VIPS_CONCURRENCY: $VIPS_CONCURRENCY"; exit 1; }
+export VIPS_CONCURRENCY
+IMAGE_PROCESSOR="${IMAGE_PROCESSOR,,}"
+[[ "$IMAGE_PROCESSOR" =~ ^(gd|imagick|vips)$ ]] || { error "Invalid IMAGE_PROCESSOR: ${IMAGE_PROCESSOR} (use gd, imagick or vips)"; exit 1; }
+export IMAGE_PROCESSOR
+if [[ "$IMAGE_PROCESSOR" == "vips" ]]; then PHP_FFI_ENABLE=true; else PHP_FFI_ENABLE=preload; fi
+export PHP_FFI_ENABLE
 validate_positive_int "$PHP_PM_WORKER_MB"      || { error "Invalid PHP_PM_WORKER_MB: $PHP_PM_WORKER_MB"; exit 1; }
 validate_positive_int "$PHP_PM_MAX_CHILDREN_CAP" || { error "Invalid PHP_PM_MAX_CHILDREN_CAP: $PHP_PM_MAX_CHILDREN_CAP"; exit 1; }
 if [[ "${PHP_PM_MAX_CHILDREN:-auto}" != "auto" ]]; then
@@ -414,7 +443,9 @@ if [[ "${PHP_PM_MAX_CHILDREN:-}" == "auto" ]]; then
     if [[ "$VALKEY_ENABLED" == "true" ]]; then
         reserve_mb=$(( reserve_mb + $(parse_size_mb "$VALKEY_MAXMEMORY") ))
     fi
-    reserve_mb=$(( reserve_mb + $(parse_size_mb "$IMAGICK_MEMORY_LIMIT") ))
+    if [[ "$IMAGE_PROCESSOR" == "imagick" ]]; then
+        reserve_mb=$(( reserve_mb + $(parse_size_mb "$IMAGICK_MEMORY_LIMIT") ))
+    fi
     usable=$(( MEM_LIMIT_MB - reserve_mb ))
     (( usable < worker_mb )) && usable=$worker_mb
     PHP_PM_MAX_CHILDREN=$(( usable / worker_mb ))
@@ -521,7 +552,7 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
     info "PHP-FPM config..."
     POOL_ENV_BLOCK=$(build_pool_env_block)
     export POOL_ENV_BLOCK
-    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION} ${IMAGICK_THREAD_LIMIT}' \
+    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION} ${IMAGICK_THREAD_LIMIT} ${VIPS_CONCURRENCY}' \
     < /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
     > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
 
@@ -556,7 +587,7 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/php-fpm-emergency.conf.tpl ]]; then
 fi
 
 if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
-    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_COOKIE_SAMESITE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APCU_ENABLED} ${PHP_APCU_SHM_SIZE} ${PHP_APCU_TTL} ${PHP_APCU_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS} ${PHP_ERROR_REPORTING} ${IMAGICK_SINGLE_THREAD}' \
+    envsubst '${PHP_MAX_EXECUTION_TIME} ${PHP_MAX_INPUT_TIME} ${PHP_MAX_INPUT_VARS} ${PHP_MEMORY_LIMIT} ${PHP_POST_MAX_SIZE} ${PHP_UPLOAD_MAX_FILESIZE} ${PHP_DEFAULT_SOCKET_TIMEOUT} ${PHP_OUTPUT_BUFFERING} ${PHP_OPCACHE_ENABLE} ${PHP_OPCACHE_MEMORY} ${PHP_OPCACHE_INTERNED_STRINGS} ${PHP_OPCACHE_MAX_FILES} ${PHP_OPCACHE_REVALIDATE_FREQ} ${PHP_OPCACHE_VALIDATE_TIMESTAMPS} ${PHP_OPCACHE_JIT} ${PHP_OPCACHE_JIT_BUFFER_SIZE} ${PHP_SESSION_COOKIE_HTTPONLY} ${PHP_SESSION_COOKIE_SECURE} ${PHP_SESSION_COOKIE_SAMESITE} ${PHP_SESSION_USE_STRICT_MODE} ${PHP_APCU_ENABLED} ${PHP_APCU_SHM_SIZE} ${PHP_APCU_TTL} ${PHP_APCU_ENABLE_CLI} ${PHP_REALPATH_CACHE_SIZE} ${PHP_REALPATH_CACHE_TTL} ${TZ} ${PHP_DISABLE_FUNCTIONS} ${PHP_ERROR_REPORTING} ${IMAGICK_SINGLE_THREAD} ${PHP_FFI_ENABLE}' \
     < /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl \
     > /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini
 
@@ -571,37 +602,50 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
     rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
 
-# ImageMagick policy: Debian ships low resource limits (256MiB memory, 1GiB disk)
-_magick_policies=()
-for _policy in /etc/ImageMagick-*/policy.xml; do
-    [[ -f "$_policy" ]] && _magick_policies+=("$_policy")
-done
-if (( ${#_magick_policies[@]} > 0 )); then
-    for _policy in "${_magick_policies[@]}"; do
-        sed -i -E '/^[[:space:]]*<policy[[:space:]]+domain="resource"[[:space:]]+name="(memory|map|disk|area|width|height|thread|time)"/d' "$_policy"
-        awk -v mem="$IMAGICK_MEMORY_LIMIT" -v map="$IMAGICK_MAP_LIMIT" -v disk="$IMAGICK_DISK_LIMIT" \
-            -v area="$IMAGICK_AREA_LIMIT" -v width="$IMAGICK_WIDTH_LIMIT" -v height="$IMAGICK_HEIGHT_LIMIT" \
-            -v thread="$IMAGICK_THREAD_LIMIT" -v time="$IMAGICK_TIME_LIMIT" '
-            /<\/policymap>/ && !done {
-                fmt = "  <policy domain=\"resource\" name=\"%s\" value=\"%s\"/>\n"
-                printf fmt, "memory", mem
-                printf fmt, "map", map
-                printf fmt, "disk", disk
-                printf fmt, "area", area
-                printf fmt, "width", width
-                printf fmt, "height", height
-                printf fmt, "thread", thread
-                printf fmt, "time", time
-                done = 1
-            }
-            { print }
-        ' "$_policy" > "${_policy}.tmp" && mv "${_policy}.tmp" "$_policy"
-    done
-    info "ImageMagick limits: memory=${IMAGICK_MEMORY_LIMIT} map=${IMAGICK_MAP_LIMIT} disk=${IMAGICK_DISK_LIMIT} area=${IMAGICK_AREA_LIMIT} ${IMAGICK_WIDTH_LIMIT}x${IMAGICK_HEIGHT_LIMIT} threads=${IMAGICK_THREAD_LIMIT} time=${IMAGICK_TIME_LIMIT}s"
+if [[ "$IMAGE_PROCESSOR" == "imagick" ]]; then
+    phpenmod -v "$PHP_VERSION" -s ALL imagick
 else
-    warning "ImageMagick policy.xml not found; skipping resource limits"
+    phpdismod -v "$PHP_VERSION" -s ALL imagick
 fi
-unset _magick_policies _policy
+
+if [[ "$IMAGE_PROCESSOR" == "imagick" ]]; then
+    _magick_policies=()
+    for _policy in /etc/ImageMagick-*/policy.xml; do
+        [[ -f "$_policy" ]] && _magick_policies+=("$_policy")
+    done
+    if (( ${#_magick_policies[@]} > 0 )); then
+        for _policy in "${_magick_policies[@]}"; do
+            sed -i -E '/^[[:space:]]*<policy[[:space:]]+domain="resource"[[:space:]]+name="(memory|map|disk|area|width|height|thread|time)"/d' "$_policy"
+            awk -v mem="$IMAGICK_MEMORY_LIMIT" -v map="$IMAGICK_MAP_LIMIT" -v disk="$IMAGICK_DISK_LIMIT" \
+                -v area="$IMAGICK_AREA_LIMIT" -v width="$IMAGICK_WIDTH_LIMIT" -v height="$IMAGICK_HEIGHT_LIMIT" \
+                -v thread="$IMAGICK_THREAD_LIMIT" -v time="$IMAGICK_TIME_LIMIT" '
+                /<\/policymap>/ && !done {
+                    fmt = "  <policy domain=\"resource\" name=\"%s\" value=\"%s\"/>\n"
+                    printf fmt, "memory", mem
+                    printf fmt, "map", map
+                    printf fmt, "disk", disk
+                    printf fmt, "area", area
+                    printf fmt, "width", width
+                    printf fmt, "height", height
+                    printf fmt, "thread", thread
+                    printf fmt, "time", time
+                    done = 1
+                }
+                { print }
+            ' "$_policy" > "${_policy}.tmp" && mv "${_policy}.tmp" "$_policy"
+        done
+        info "ImageMagick limits: memory=${IMAGICK_MEMORY_LIMIT} map=${IMAGICK_MAP_LIMIT} disk=${IMAGICK_DISK_LIMIT} area=${IMAGICK_AREA_LIMIT} ${IMAGICK_WIDTH_LIMIT}x${IMAGICK_HEIGHT_LIMIT} threads=${IMAGICK_THREAD_LIMIT} time=${IMAGICK_TIME_LIMIT}s"
+    else
+        warning "ImageMagick policy.xml not found; skipping resource limits"
+    fi
+    unset _magick_policies _policy
+fi
+
+case "$IMAGE_PROCESSOR" in
+    gd)      info "Image processor: gd" ;;
+    imagick) info "Image processor: imagick (threads=${IMAGICK_THREAD_LIMIT}), fallback gd" ;;
+    vips)    info "Image processor: vips (concurrency=${VIPS_CONCURRENCY}${VIPS_CONCURRENCY_SOURCE}, ffi.enable=true), fallback gd" ;;
+esac
 
 # Self-signed SSL cert
 if [[ ! -f "${SSL_CERT_PATH}" ]] || [[ ! -f "${SSL_PRIVATE_PATH}" ]]; then
@@ -822,6 +866,23 @@ if [[ -d "${APP_PATH}/wp-content" ]]; then
     ln -sf "${UPLOADS_PATH}" "${APP_PATH}/wp-content/uploads"
     info "Uploads symlink created"
 fi
+
+_vips_mu_src=/usr/lib/php/presshost/mu-plugins/presshost-vips.php
+_vips_mu_dst="${APP_PATH}/wp-content/mu-plugins/presshost-vips.php"
+if [[ -d "${APP_PATH}/wp-content" ]]; then
+    if [[ "$IMAGE_PROCESSOR" == "vips" ]]; then
+        mkdir -p "${APP_PATH}/wp-content/mu-plugins"
+        cp -f "$_vips_mu_src" "$_vips_mu_dst"
+        chown "${APP_USER}:${APP_GROUP}" "${APP_PATH}/wp-content/mu-plugins" "$_vips_mu_dst"
+        info "libvips mu-plugin installed"
+    elif [[ -f "$_vips_mu_dst" ]] && grep -q "PressHost: managed file" "$_vips_mu_dst"; then
+        rm -f "$_vips_mu_dst"
+        info "libvips mu-plugin removed"
+    fi
+elif [[ "$IMAGE_PROCESSOR" == "vips" ]]; then
+    warning "IMAGE_PROCESSOR=vips but ${APP_PATH}/wp-content not found; mu-plugin not installed"
+fi
+unset _vips_mu_src _vips_mu_dst
 
 # Ownership remediation
 if [[ "${FIX_OWNERSHIP:-true}" == "true" ]]; then

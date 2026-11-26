@@ -13,6 +13,8 @@ sys_temp_dir = /tmp
 imagick.set_single_thread = ${IMAGICK_SINGLE_THREAD}
 imagick.skip_version_check = 1
 
+ffi.enable = ${PHP_FFI_ENABLE}
+
 expose_php = Off
 
 output_buffering = ${PHP_OUTPUT_BUFFERING}

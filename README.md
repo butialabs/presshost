@@ -232,7 +232,17 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 
 *1 `exec,passthru,shell_exec,system,proc_open,popen,parse_ini_file,show_source,pcntl_exec`
 
-### ImageMagick (Imagick)
+### Image processing
+
+GD is always loaded and is the fallback for every mode. `IMAGE_PROCESSOR` turns on one extra library; WordPress uses it first and falls back to GD when it can't handle a file.
+
+| `IMAGE_PROCESSOR` | Loads | Notes |
+| ----------------- | ----- | ----- |
+| `gd` (default)    | No PDF thumbnails, no HEIC, no TIFF, CMYK JPEGs may get wrong colors |
+| `imagick`         | GD + Imagick | No PDF thumbnails (Ghostscript is not installed). Uses the `IMAGICK_*` limits below |
+| `vips`            | GD + PressHost libvips | Fastest and lowest memory (streams outside PHP memory). |
+
+#### Imagick (`IMAGE_PROCESSOR=imagick`)
 
 Resource limits written to `/etc/ImageMagick-*/policy.xml` at startup. Debian's defaults (256MiB memory / 1GiB disk) are too low for modern phone photos: they force the slow disk pixel cache or fail with `cache resources exhausted`. Security (coder) policies are not changed.
 
@@ -246,6 +256,14 @@ Resource limits written to `/etc/ImageMagick-*/policy.xml` at startup. Debian's 
 | `IMAGICK_HEIGHT_LIMIT`  | `32KP`  | Max image height                                                  |
 | `IMAGICK_THREAD_LIMIT`  | `1`     | Threads per process (also sets `MAGICK_THREAD_LIMIT`/`OMP_NUM_THREADS` and `imagick.set_single_thread` in FPM). `1` suits busy sites, since FPM already runs requests in parallel; on small, low-traffic servers set it to the CPU count to speed up large uploads |
 | `IMAGICK_TIME_LIMIT`    | `120`   | Max seconds per ImageMagick operation                              |
+
+#### libvips (`IMAGE_PROCESSOR=vips`)
+
+| Variable           | Default | Description                                                                 |
+| ------------------ | ------- | --------------------------------------------------------------------------- |
+| `VIPS_CONCURRENCY` | `auto`  | libvips threads per process. `auto` = container CPU count (cgroup `cpu.max`, else `nproc`). On busy sites with many FPM workers, consider `1` to avoid oversubscription |
+
+The editor keeps only the ICC color profile in generated sizes (EXIF/GPS are removed), converts CMYK to sRGB and flattens transparency onto white for JPEG output.
 
 ### NGINX
 
