@@ -152,7 +152,7 @@ set_default PHP_APCU_ENABLE_CLI 0
 set_default PHP_REALPATH_CACHE_SIZE 4096K
 set_default PHP_REALPATH_CACHE_TTL 600
 set_default PHP_ERROR_REPORTING "E_ALL & ~E_DEPRECATED & ~E_STRICT"
-set_default PHP_DISABLE_FUNCTIONS "exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec"
+set_default PHP_DISABLE_FUNCTIONS "exec,passthru,shell_exec,system,proc_open,popen,parse_ini_file,show_source,pcntl_exec"
 set_default PHP_CLI_DISABLE_FUNCTIONS ""
 set_default PHP_OPCACHE_ENABLE_CLI 0
 set_default PHP_PM_WORKER_MB 128

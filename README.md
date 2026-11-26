@@ -230,7 +230,7 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 | `PHP_REALPATH_CACHE_TTL`            | `600`     | Realpath cache TTL (seconds)                     |
 | `PHP_ERROR_REPORTING`               | `E_ALL & ~E_DEPRECATED & ~E_STRICT` | PHP error reporting level |
 
-*1 `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec`
+*1 `exec,passthru,shell_exec,system,proc_open,popen,parse_ini_file,show_source,pcntl_exec`
 
 ### ImageMagick (Imagick)
 
