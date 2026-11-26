@@ -219,9 +219,9 @@ fi
 validate_positive_int "$VIPS_CONCURRENCY"      || { error "Invalid VIPS_CONCURRENCY: $VIPS_CONCURRENCY"; exit 1; }
 export VIPS_CONCURRENCY
 IMAGE_PROCESSOR="${IMAGE_PROCESSOR,,}"
-[[ "$IMAGE_PROCESSOR" =~ ^(gd|imagick|vips)$ ]] || { error "Invalid IMAGE_PROCESSOR: ${IMAGE_PROCESSOR} (use gd, imagick or vips)"; exit 1; }
+[[ "$IMAGE_PROCESSOR" =~ ^(gd|imagick|libvips)$ ]] || { error "Invalid IMAGE_PROCESSOR: ${IMAGE_PROCESSOR} (use gd, imagick or libvips)"; exit 1; }
 export IMAGE_PROCESSOR
-if [[ "$IMAGE_PROCESSOR" == "vips" ]]; then PHP_FFI_ENABLE=true; else PHP_FFI_ENABLE=preload; fi
+if [[ "$IMAGE_PROCESSOR" == "libvips" ]]; then PHP_FFI_ENABLE=true; else PHP_FFI_ENABLE=preload; fi
 export PHP_FFI_ENABLE
 validate_positive_int "$PHP_PM_WORKER_MB"      || { error "Invalid PHP_PM_WORKER_MB: $PHP_PM_WORKER_MB"; exit 1; }
 validate_positive_int "$PHP_PM_MAX_CHILDREN_CAP" || { error "Invalid PHP_PM_MAX_CHILDREN_CAP: $PHP_PM_MAX_CHILDREN_CAP"; exit 1; }
@@ -644,7 +644,7 @@ fi
 case "$IMAGE_PROCESSOR" in
     gd)      info "Image processor: gd" ;;
     imagick) info "Image processor: imagick (threads=${IMAGICK_THREAD_LIMIT}), fallback gd" ;;
-    vips)    info "Image processor: vips (concurrency=${VIPS_CONCURRENCY}${VIPS_CONCURRENCY_SOURCE}, ffi.enable=true), fallback gd" ;;
+    libvips) info "Image processor: libvips (concurrency=${VIPS_CONCURRENCY}${VIPS_CONCURRENCY_SOURCE}, ffi.enable=true), fallback gd" ;;
 esac
 
 # Self-signed SSL cert
@@ -870,7 +870,7 @@ fi
 _vips_mu_src=/usr/lib/php/presshost/mu-plugins/presshost-vips.php
 _vips_mu_dst="${APP_PATH}/wp-content/mu-plugins/presshost-vips.php"
 if [[ -d "${APP_PATH}/wp-content" ]]; then
-    if [[ "$IMAGE_PROCESSOR" == "vips" ]]; then
+    if [[ "$IMAGE_PROCESSOR" == "libvips" ]]; then
         mkdir -p "${APP_PATH}/wp-content/mu-plugins"
         cp -f "$_vips_mu_src" "$_vips_mu_dst"
         chown "${APP_USER}:${APP_GROUP}" "${APP_PATH}/wp-content/mu-plugins" "$_vips_mu_dst"
@@ -879,8 +879,8 @@ if [[ -d "${APP_PATH}/wp-content" ]]; then
         rm -f "$_vips_mu_dst"
         info "libvips mu-plugin removed"
     fi
-elif [[ "$IMAGE_PROCESSOR" == "vips" ]]; then
-    warning "IMAGE_PROCESSOR=vips but ${APP_PATH}/wp-content not found; mu-plugin not installed"
+elif [[ "$IMAGE_PROCESSOR" == "libvips" ]]; then
+    warning "IMAGE_PROCESSOR=libvips but ${APP_PATH}/wp-content not found; mu-plugin not installed"
 fi
 unset _vips_mu_src _vips_mu_dst
 

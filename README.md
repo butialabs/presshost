@@ -240,7 +240,7 @@ GD is always loaded and is the fallback for every mode. `IMAGE_PROCESSOR` turns 
 | ----------------- | ----- | ----- |
 | `gd` (default)    | No PDF thumbnails, no HEIC, no TIFF, CMYK JPEGs may get wrong colors |
 | `imagick`         | GD + Imagick | No PDF thumbnails (Ghostscript is not installed). Uses the `IMAGICK_*` limits below |
-| `vips`            | GD + PressHost libvips | Fastest and lowest memory (streams outside PHP memory). |
+| `libvips`         | GD + PressHost libvips | Fastest and lowest memory (streams outside PHP memory). |
 
 #### Imagick (`IMAGE_PROCESSOR=imagick`)
 
@@ -257,7 +257,7 @@ Resource limits written to `/etc/ImageMagick-*/policy.xml` at startup. Debian's 
 | `IMAGICK_THREAD_LIMIT`  | `1`     | Threads per process (also sets `MAGICK_THREAD_LIMIT`/`OMP_NUM_THREADS` and `imagick.set_single_thread` in FPM). `1` suits busy sites, since FPM already runs requests in parallel; on small, low-traffic servers set it to the CPU count to speed up large uploads |
 | `IMAGICK_TIME_LIMIT`    | `120`   | Max seconds per ImageMagick operation                              |
 
-#### libvips (`IMAGE_PROCESSOR=vips`)
+#### libvips (`IMAGE_PROCESSOR=libvips`)
 
 | Variable           | Default | Description                                                                 |
 | ------------------ | ------- | --------------------------------------------------------------------------- |

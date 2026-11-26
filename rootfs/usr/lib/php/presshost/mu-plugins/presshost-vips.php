@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: PressHost: libvips
- * Description: Processes uploads with libvips (IMAGE_PROCESSOR=vips).
+ * Description: Processes uploads with libvips (IMAGE_PROCESSOR=libvips).
  * Author: PressHost
  */
 
@@ -49,7 +49,7 @@ add_filter('debug_information', static function ($info) {
     $fields = [
         'processor' => [
             'label' => 'Image processor',
-            'value' => 'vips (fallback: GD)',
+            'value' => 'libvips (fallback: GD)',
         ],
     ];
 
