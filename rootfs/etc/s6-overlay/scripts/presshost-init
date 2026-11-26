@@ -570,7 +570,11 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
 fi
 
 # ImageMagick policy: Debian ships low resource limits (256MiB memory, 1GiB disk)
-if [[ -f "${_magick_policies[0]}" ]]; then
+_magick_policies=()
+for _policy in /etc/ImageMagick-*/policy.xml; do
+    [[ -f "$_policy" ]] && _magick_policies+=("$_policy")
+done
+if (( ${#_magick_policies[@]} > 0 )); then
     for _policy in "${_magick_policies[@]}"; do
         sed -i -E '/^[[:space:]]*<policy[[:space:]]+domain="resource"[[:space:]]+name="(memory|map|disk|area|width|height|thread|time)"/d' "$_policy"
         awk -v mem="$IMAGICK_MEMORY_LIMIT" -v map="$IMAGICK_MAP_LIMIT" -v disk="$IMAGICK_DISK_LIMIT" \
