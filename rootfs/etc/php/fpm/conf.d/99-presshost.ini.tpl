@@ -10,7 +10,7 @@ date.timezone = ${TZ}
 upload_tmp_dir = /tmp
 sys_temp_dir = /tmp
 
-imagick.set_single_thread = 1
+imagick.set_single_thread = ${IMAGICK_SINGLE_THREAD}
 imagick.skip_version_check = 1
 
 expose_php = Off

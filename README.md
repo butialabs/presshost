@@ -244,7 +244,7 @@ Resource limits written to `/etc/ImageMagick-*/policy.xml` at startup. Debian's 
 | `IMAGICK_AREA_LIMIT`    | `256MP` | Max image area (megapixels)                                       |
 | `IMAGICK_WIDTH_LIMIT`   | `32KP`  | Max image width                                                   |
 | `IMAGICK_HEIGHT_LIMIT`  | `32KP`  | Max image height                                                  |
-| `IMAGICK_THREAD_LIMIT`  | `1`     | Threads per process (also sets `MAGICK_THREAD_LIMIT`/`OMP_NUM_THREADS` in FPM). Keep `1`: FPM already runs work in parallel |
+| `IMAGICK_THREAD_LIMIT`  | `1`     | Threads per process (also sets `MAGICK_THREAD_LIMIT`/`OMP_NUM_THREADS` and `imagick.set_single_thread` in FPM). `1` suits busy sites, since FPM already runs requests in parallel; on small, low-traffic servers set it to the CPU count to speed up large uploads |
 | `IMAGICK_TIME_LIMIT`    | `120`   | Max seconds per ImageMagick operation                              |
 
 ### NGINX
