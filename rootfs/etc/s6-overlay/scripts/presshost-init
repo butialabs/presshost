@@ -157,6 +157,15 @@ set_default PHP_CLI_DISABLE_FUNCTIONS ""
 set_default PHP_OPCACHE_ENABLE_CLI 0
 set_default PHP_PM_WORKER_MB 128
 
+set_default IMAGICK_MEMORY_LIMIT 1GiB
+set_default IMAGICK_MAP_LIMIT 2GiB
+set_default IMAGICK_DISK_LIMIT 4GiB
+set_default IMAGICK_AREA_LIMIT 256MP
+set_default IMAGICK_WIDTH_LIMIT 32KP
+set_default IMAGICK_HEIGHT_LIMIT 32KP
+set_default IMAGICK_THREAD_LIMIT 1
+set_default IMAGICK_TIME_LIMIT 120
+
 # Valkey (local object cache server)
 set_default VALKEY_ENABLED false
 set_default VALKEY_BIND 127.0.0.1
@@ -169,12 +178,20 @@ set_default VALKEY_PASSWORD ""
 validate_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 validate_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 )); }
 validate_size() { [[ "$1" =~ ^[0-9]+([kKmMgG][bB]?)?$ ]]; }
+validate_magick_size() { [[ "$1" =~ ^[0-9]+([KkMmGgTt]i?[Bb]?|[KkMmGgTt]?[Pp])?$ ]]; }
 
 validate_port "$NGINX_HTTP_PORT"        || { error "Invalid NGINX_HTTP_PORT: $NGINX_HTTP_PORT"; exit 1; }
 validate_port "$NGINX_HTTPS_PORT"       || { error "Invalid NGINX_HTTPS_PORT: $NGINX_HTTPS_PORT"; exit 1; }
 validate_port "$VALKEY_PORT"            || { error "Invalid VALKEY_PORT: $VALKEY_PORT"; exit 1; }
 validate_size "${PHP_MEMORY_LIMIT:-512M}"      || { error "Invalid PHP_MEMORY_LIMIT: $PHP_MEMORY_LIMIT"; exit 1; }
 validate_size "$NGINX_CACHE_MAX_SIZE"   || { error "Invalid NGINX_CACHE_MAX_SIZE: $NGINX_CACHE_MAX_SIZE"; exit 1; }
+for _magick_var in IMAGICK_MEMORY_LIMIT IMAGICK_MAP_LIMIT IMAGICK_DISK_LIMIT \
+                   IMAGICK_AREA_LIMIT IMAGICK_WIDTH_LIMIT IMAGICK_HEIGHT_LIMIT; do
+    validate_magick_size "${!_magick_var}" || { error "Invalid ${_magick_var}: ${!_magick_var}"; exit 1; }
+done
+unset _magick_var
+validate_positive_int "$IMAGICK_THREAD_LIMIT"  || { error "Invalid IMAGICK_THREAD_LIMIT: $IMAGICK_THREAD_LIMIT"; exit 1; }
+validate_positive_int "$IMAGICK_TIME_LIMIT"    || { error "Invalid IMAGICK_TIME_LIMIT: $IMAGICK_TIME_LIMIT"; exit 1; }
 validate_positive_int "$PHP_PM_WORKER_MB"      || { error "Invalid PHP_PM_WORKER_MB: $PHP_PM_WORKER_MB"; exit 1; }
 validate_positive_int "$PHP_PM_MAX_CHILDREN_CAP" || { error "Invalid PHP_PM_MAX_CHILDREN_CAP: $PHP_PM_MAX_CHILDREN_CAP"; exit 1; }
 if [[ "${PHP_PM_MAX_CHILDREN:-auto}" != "auto" ]]; then
@@ -395,6 +412,7 @@ if [[ "${PHP_PM_MAX_CHILDREN:-}" == "auto" ]]; then
     if [[ "$VALKEY_ENABLED" == "true" ]]; then
         reserve_mb=$(( reserve_mb + $(parse_size_mb "$VALKEY_MAXMEMORY") ))
     fi
+    reserve_mb=$(( reserve_mb + $(parse_size_mb "$IMAGICK_MEMORY_LIMIT") ))
     usable=$(( MEM_LIMIT_MB - reserve_mb ))
     (( usable < worker_mb )) && usable=$worker_mb
     PHP_PM_MAX_CHILDREN=$(( usable / worker_mb ))
@@ -501,7 +519,7 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl ]]; then
     info "PHP-FPM config..."
     POOL_ENV_BLOCK=$(build_pool_env_block)
     export POOL_ENV_BLOCK
-    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION}' \
+    envsubst '${APP_USER} ${APP_GROUP} ${LOGS_PATH} ${PHP_PM} ${PHP_PM_MAX_CHILDREN} ${PHP_PM_START_SERVERS} ${PHP_PM_MIN_SPARE_SERVERS} ${PHP_PM_MAX_SPARE_SERVERS} ${PHP_PM_MAX_REQUESTS} ${PHP_PM_PROCESS_IDLE_TIMEOUT} ${PHP_FPM_REQUEST_TERMINATE_TIMEOUT} ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT} ${PHP_FPM_LISTEN_BACKLOG} ${PHP_FPM_RLIMIT_FILES} ${PHP_VERSION} ${IMAGICK_THREAD_LIMIT}' \
     < /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.tpl \
     > /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
 
@@ -550,6 +568,34 @@ if [[ -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl ]]; then
 
     rm -f /etc/php/${PHP_VERSION}/fpm/conf.d/99-presshost.ini.tpl
 fi
+
+# ImageMagick policy: Debian ships low resource limits (256MiB memory, 1GiB disk)
+if [[ -f "${_magick_policies[0]}" ]]; then
+    for _policy in "${_magick_policies[@]}"; do
+        sed -i -E '/^[[:space:]]*<policy[[:space:]]+domain="resource"[[:space:]]+name="(memory|map|disk|area|width|height|thread|time)"/d' "$_policy"
+        awk -v mem="$IMAGICK_MEMORY_LIMIT" -v map="$IMAGICK_MAP_LIMIT" -v disk="$IMAGICK_DISK_LIMIT" \
+            -v area="$IMAGICK_AREA_LIMIT" -v width="$IMAGICK_WIDTH_LIMIT" -v height="$IMAGICK_HEIGHT_LIMIT" \
+            -v thread="$IMAGICK_THREAD_LIMIT" -v time="$IMAGICK_TIME_LIMIT" '
+            /<\/policymap>/ && !done {
+                fmt = "  <policy domain=\"resource\" name=\"%s\" value=\"%s\"/>\n"
+                printf fmt, "memory", mem
+                printf fmt, "map", map
+                printf fmt, "disk", disk
+                printf fmt, "area", area
+                printf fmt, "width", width
+                printf fmt, "height", height
+                printf fmt, "thread", thread
+                printf fmt, "time", time
+                done = 1
+            }
+            { print }
+        ' "$_policy" > "${_policy}.tmp" && mv "${_policy}.tmp" "$_policy"
+    done
+    info "ImageMagick limits: memory=${IMAGICK_MEMORY_LIMIT} map=${IMAGICK_MAP_LIMIT} disk=${IMAGICK_DISK_LIMIT} area=${IMAGICK_AREA_LIMIT} ${IMAGICK_WIDTH_LIMIT}x${IMAGICK_HEIGHT_LIMIT} threads=${IMAGICK_THREAD_LIMIT} time=${IMAGICK_TIME_LIMIT}s"
+else
+    warning "ImageMagick policy.xml not found; skipping resource limits"
+fi
+unset _magick_policies _policy
 
 # Self-signed SSL cert
 if [[ ! -f "${SSL_CERT_PATH}" ]] || [[ ! -f "${SSL_PRIVATE_PATH}" ]]; then

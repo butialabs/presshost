@@ -32,3 +32,8 @@ php_admin_flag[log_errors] = on
 php_admin_value[error_log] = ${LOGS_PATH}/php-error.log
 slowlog = ${LOGS_PATH}/php-slow.log
 request_slowlog_timeout = ${PHP_FPM_REQUEST_SLOWLOG_TIMEOUT}
+
+env[MAGICK_THREAD_LIMIT] = ${IMAGICK_THREAD_LIMIT}
+env[OMP_NUM_THREADS] = ${IMAGICK_THREAD_LIMIT}
+env[MAGICK_TEMPORARY_PATH] = /tmp
+env[TMPDIR] = /tmp

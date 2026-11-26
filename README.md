@@ -232,6 +232,21 @@ If you forget `--chown`, the init fixes ownership automatically at container sta
 
 *1 `exec,passthru,shell_exec,system,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,pcntl_exec`
 
+### ImageMagick (Imagick)
+
+Resource limits written to `/etc/ImageMagick-*/policy.xml` at startup. Debian's defaults (256MiB memory / 1GiB disk) are too low for modern phone photos: they force the slow disk pixel cache or fail with `cache resources exhausted`. Security (coder) policies are not changed.
+
+| Variable                | Default | Description                                                        |
+| ----------------------- | ------- | ------------------------------------------------------------------ |
+| `IMAGICK_MEMORY_LIMIT`  | `1GiB`  | Pixel cache kept in RAM per process (also reserved by the `PHP_PM_MAX_CHILDREN=auto` calculation) |
+| `IMAGICK_MAP_LIMIT`     | `2GiB`  | Memory-mapped pixel cache before falling back to disk             |
+| `IMAGICK_DISK_LIMIT`    | `4GiB`  | Disk pixel cache (in `/tmp`) before the job fails                 |
+| `IMAGICK_AREA_LIMIT`    | `256MP` | Max image area (megapixels)                                       |
+| `IMAGICK_WIDTH_LIMIT`   | `32KP`  | Max image width                                                   |
+| `IMAGICK_HEIGHT_LIMIT`  | `32KP`  | Max image height                                                  |
+| `IMAGICK_THREAD_LIMIT`  | `1`     | Threads per process (also sets `MAGICK_THREAD_LIMIT`/`OMP_NUM_THREADS` in FPM). Keep `1`: FPM already runs work in parallel |
+| `IMAGICK_TIME_LIMIT`    | `120`   | Max seconds per ImageMagick operation                              |
+
 ### NGINX
 
 | Variable                            | Default  | Description                                       |

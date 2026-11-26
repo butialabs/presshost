@@ -7,6 +7,12 @@ upload_max_filesize = ${PHP_UPLOAD_MAX_FILESIZE}
 default_socket_timeout = ${PHP_DEFAULT_SOCKET_TIMEOUT}
 date.timezone = ${TZ}
 
+upload_tmp_dir = /tmp
+sys_temp_dir = /tmp
+
+imagick.set_single_thread = 1
+imagick.skip_version_check = 1
+
 expose_php = Off
 
 output_buffering = ${PHP_OUTPUT_BUFFERING}
